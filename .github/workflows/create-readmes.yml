@@ -37,6 +37,8 @@ permissions:
   contents: write
   actions: read  # Added permission to read actions and repository metadata
   metadata: read  # Added permission to read repository metadata
+  pull-requests: read  # Added permission to read pull requests
+  issues: read  # Added permission to read issues
 
 jobs:
   create:
