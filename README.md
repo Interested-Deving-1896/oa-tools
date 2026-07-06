@@ -4,38 +4,33 @@
 [![Built with Ona](https://ona.com/build-with-ona.svg)](https://app.ona.com/#https://github.com/Interested-Deving-1896/oa-tools)
 
 <!-- AI:start:what-it-does -->
-This project provides tools for remastering and customizing Linux distributions in a systematic way. It aims to address the challenge of creating a universal approach to remastering, despite the differences between distributions. It is used by developers and system administrators who need to automate or standardize the process of modifying and deploying Linux systems.
+This project provides tools for remastering and customizing operating systems across different Linux distributions. It aims to explore a universal approach to system remastering by leveraging shared foundations while accommodating distribution-specific differences. It is used by developers and system administrators working on OS customization and automation tasks.
 <!-- AI:end:what-it-does -->
 
 ## Architecture
 
 <!-- AI:start:architecture -->
-The `oa-tools` project is structured to support a universal approach to system remastering across different Linux distributions. It consists of two main components:
+The project is structured into two main components: `oa` and `coa`. The `oa` component, written in C, serves as the workhorse for system remastering tasks, while `coa`, written in Go, acts as the orchestration layer or "brain." The `Makefile` is the central build system, defining targets for building, cleaning, and generating documentation. The repository also includes workflows for CI/CD and automation tasks.
 
-1. **`oa`**: A C-based workhorse responsible for core remastering tasks.
-2. **`coa`**: A Go-based tool that acts as the orchestration brain, handling high-level operations and generating documentation and shell completions.
-
-The `Makefile` serves as the central build and task management system, defining targets for building binaries, generating documentation, and cleaning up artifacts. The `oa` component is built using its internal Makefile, while `coa` is compiled with Go, embedding version information at build time.
-
-The repository structure is as follows:
+The directory structure is as follows:
 
 ```plaintext
 .
-├── .github/                # GitHub workflows and CI/CD configurations
-├── coa/                    # Source code and assets for the `coa` component
-│   ├── docs/               # Generated documentation and shell completions
-│   ├── main.go             # Entry point for `coa`
-│   └── pkg/                # Package-specific Go code
-├── oa/                     # Source code for the `oa` component
-├── scripts/                # Utility scripts
-├── tests/                  # Test cases and related assets
-├── Makefile                # Build and task automation
-├── LICENSE                 # License file
-├── README.md               # Project documentation
-└── other files             # Miscellaneous project files
+├── .github/               # GitHub workflows and configurations
+├── coa/                   # Source code and resources for the 'coa' component
+│   ├── docs/              # Documentation and shell completions
+│   ├── main.go            # Entry point for the 'coa' binary
+│   └── pkg/               # Go packages for 'coa'
+├── oa/                    # Source code for the 'oa' component
+├── scripts/               # Utility scripts
+├── tests/                 # Test cases and related resources
+├── Makefile               # Build and automation tasks
+├── README.md              # Project documentation
+├── LICENSE                # License information
+└── other files            # Additional configuration and documentation files
 ```
 
-The `oa` and `coa` binaries are built into their respective directories. Documentation and shell completions are generated under `coa/docs`.
+The `Makefile` defines `build_oa` and `build_coa` targets to compile the respective components. The `docs` target generates documentation and shell completions for `coa`. The `clean` target removes build artifacts, native packages, and documentation.
 <!-- AI:end:architecture -->
 
 ## Install
@@ -58,16 +53,36 @@ cd oa-tools
 ## CI
 
 <!-- AI:start:ci -->
-- **add-mirror-repo.yml**: Adds a new mirror repository to the organization. Requires `GITHUB_TOKEN` secret.
-- **check-gitlab-sync.yml**: Verifies synchronization status between GitHub and GitLab repositories. Requires `GITLAB_TOKEN` secret.
-- **cleanup-pollution.yml**: Removes temporary files and artifacts from the repository. No secrets required.
-- **mirror-artifacts.yml**: Mirrors build artifacts to external storage. Requires `STORAGE_ACCESS_KEY` and `STORAGE_SECRET_KEY` secrets.
-- **neon-build-ci.yml**: Executes CI pipelines for Neon-based builds. Requires `GITHUB_TOKEN` secret.
-- **sync-forks.yml**: Synchronizes forks with upstream repositories. Requires `GITHUB_TOKEN` secret.
-- **rotate-token.yml**: Rotates API tokens for external services. Requires `API_ROTATION_KEY` secret.
-- **upstream-commits.yml**: Tracks and integrates upstream commits into the repository. Requires `GITHUB_TOKEN` secret.
-- **trigger-artifact-mirror.yml**: Initiates artifact mirroring workflows. Requires `STORAGE_ACCESS_KEY` and `STORAGE_SECRET_KEY` secrets.
-- **readme-wizard.yml**: Updates README files across repositories. Requires `GITHUB_TOKEN` secret.
+The repository uses GitHub Actions for continuous integration and automation. Below are the workflows and their purposes:
+
+- **add-mirror-repo.yml**: Adds a new mirror repository to the system.  
+  *No secrets required.*
+
+- **ci-2001.yml - ci-2012.yml**: Run various CI tests for different configurations and environments.  
+  *No secrets required.*
+
+- **cleanup-pollution.yml**: Cleans up temporary files and artifacts from previous runs.  
+  *No secrets required.*
+
+- **mirror-orgs-full.yml**: Mirrors all repositories within an organization.  
+  *Requires `GITHUB_TOKEN`.*
+
+- **mirror-osp-to-gitlab.yml**: Mirrors open-source projects to GitLab.  
+  *Requires `GITLAB_TOKEN`.*
+
+- **neon-build-ci.yml**: Builds and tests the Neon project.  
+  *No secrets required.*
+
+- **sync-forks.yml**: Synchronizes forks with their upstream repositories.  
+  *No secrets required.*
+
+- **rotate-token.yml**: Rotates API tokens for security purposes.  
+  *Requires `API_TOKEN`.*
+
+- **trigger-artifact-mirror.yml**: Triggers artifact mirroring workflows.  
+  *No secrets required.*
+
+Refer to individual workflow files in `.github/workflows/` for detailed configurations.
 <!-- AI:end:ci -->
 
 ## Mirror chain
