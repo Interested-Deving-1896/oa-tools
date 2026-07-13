@@ -58,6 +58,7 @@ jobs:
           bash scripts/hw-detect.sh --json | python3 -c "
           import sys, json
           d = json.load(sys.stdin)
+          d['CPU_ARCH'] = '${{ matrix.arch }}'  # Ensure CPU_ARCH is set
           print('CPU_ARCH:', d.get('CPU_ARCH','?'))
           print('CPU_TIER:', d.get('CPU_TIER','?'))
           print('GPU_TIER:', d.get('GPU_TIER','?'))
