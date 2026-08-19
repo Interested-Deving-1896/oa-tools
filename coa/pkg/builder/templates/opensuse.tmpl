@@ -1,0 +1,68 @@
+Name:           penguins-eggs
+Version:        {{.BaseVersion}}
+Release:        {{.Rel}}
+Summary:        penguins-eggs universal Linux remastering
+License:        GPL-3.0-only
+Group:          System/Management
+URL:            https://penguins-eggs.net
+
+Requires:       bash-completion
+Requires:       bsdtar
+Requires:       curl
+Requires:       dosfstools
+Requires:       dracut
+Requires:       efibootmgr
+Requires:       git
+Requires:       gpg2
+Requires:       gptfdisk
+Requires:       grub2-i386-pc
+Requires:       grub2-x86_64-efi
+Requires:       mtools
+Requires:       noto-coloremoji-fonts
+Requires:       rsync
+Requires:       shim
+Requires:       squashfs
+Requires:       sudo
+Requires:       xorriso
+Requires:       yq
+Requires:       qemu-guest-agent
+
+# Gestione della transizione: diciamo a Zypper di sostituire la vecchia versione
+Conflicts:      oa-tools
+Obsoletes:      oa-tools
+
+# Disabilitiamo l'estrazione di debug automatica e le manipolazioni post-installazione
+%define debug_package %{nil}
+%define __os_install_post %{nil}
+
+%description
+penguins-eggs: universal Linux remastering suite.
+coa is the mind, oa is the arm. This suite provides the
+necessary tools for Linux system remastering and administration.
+
+%prep
+%build
+
+%install
+mkdir -p %{buildroot}/usr
+mkdir -p %{buildroot}/etc
+chmod 0755 %{buildroot}/usr %{buildroot}/etc
+
+cp -a %{_stagedir}/usr/* %{buildroot}/usr/
+cp -a %{_stagedir}/etc/* %{buildroot}/etc/
+
+%files
+/usr/bin/oa
+/usr/bin/coa
+/usr/bin/eggs
+/etc/penguins-eggs.d/
+/usr/share/man/man1/*
+/usr/share/penguins-eggs/
+/usr/share/bash-completion/completions/*
+/usr/share/fish/vendor_completions.d/*
+/usr/share/zsh/vendor-completions/*
+
+
+%changelog
+* {{.RpmDate}} Piero Proietti <piero.proietti@gmail.com> - {{.BaseVersion}}-{{.Rel}}
+- Automated build via penguins-eggs builder for openSUSE

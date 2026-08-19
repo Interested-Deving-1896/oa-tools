@@ -1,6 +1,426 @@
-# Changelog - oa-tools
+See AI context: https://penguins-eggs.net/llms.txt
 
-## 🐧 oa-tools v0.7.8 - 
+# Changelog
+
+## Release Notes: penguins-eggs v26.8.14 - 2026-08-14
+This release introduces BIOS filesystem restriction to ext4 in Calamares partition configuration, Model Context Protocol (MCP) server integration for AI-assisted workflows, streamlined "Just-ISO" bootloader and packaging architecture, full RISC-V / Spacemit K1 (MUSE-Book) hardware support, multi-architecture builder hardening, and a restructured documentation suite.
+
+### 💿 Calamares & BIOS Partition Configuration
+* **BIOS Ext4 Enforcement**: Restricted `availableFileSystemTypes` in `partition.conf` strictly to `ext4` on standard BIOS (`msdos` partition table) systems (`coa/pkg/sysinstall/setup/partition-conf.go`), preventing incompatible filesystem selections on legacy BIOS installations while maintaining full dynamic filesystem discovery on UEFI (`gpt`).
+* **Btrfs Mount Optimization**: Enhanced default Btrfs mount options in `mount.conf.tmpl` with `compress=zstd:1`, async discard (`discard=async`) on SSDs, and `autodefrag` on HDDs.
+* **Unit Test Coverage**: Added unit tests in `coa/pkg/sysinstall/setup/partition-conf_test.go` to validate `partition.conf` generation and filesystem filtering across firmware modes.
+
+### 🤖 Model Context Protocol (MCP) Integration
+* **Native MCP Server**: Implemented a built-in Model Context Protocol server in `coa/pkg/mcp/` (`server.go`, `manager.go`, `types.go`), enabling AI assistants and LLMs to interact with `penguins-eggs` directly via standardized MCP tools and resources.
+* **MCP CLI Management**: Added `eggs mcp start`, `eggs mcp stop`, `eggs mcp status`, `eggs mcp enable`, and `eggs mcp disable` commands for full background daemon lifecycle control.
+
+### 🚀 ISO Engine & Bootloader Consolidation
+* **Consolidated Bootloader Staging**: Refactored `bootloader-copy.sh` and distribution module scripts across Alpine, Arch-family, Debian, Fedora, and openSUSE (`coa/brain.d/modules/`) for unified EFI/BIOS bootloader staging and reliable live booting.
+
+### 💻 RISC-V & Spacemit K1 (MUSE-Book) Port
+> Note: I have just a Spacemit Musebook M1 unable to boot on UEFI, so unfortunately can't test and debug ISO images, this need Spacemit k3 processor and I don't have it. 
+
+* **6-Partition Layout & bootfs**: Added full support for Spacemit K1 partition layout in Krill (`coa/pkg/sysinstall/krill/engine/partition.go`), provisioning `bootinfo`, `fsbl`, `env`, `opensbi`, `uboot`, `bootfs`, and `rootfs`.
+* **U-Boot & NVMe Integration**: Implemented NVMe boot scanning and U-Boot environment templating (`spacemit/env_k1-x.mustache`, `env_k1-x.26.3.11.mustache`).
+* **sfdisk Alignment & Fallback**: Configured `first-lba: 256` in sfdisk partition generation for GPT alignment and implemented sfdisk fallback when `sgdisk` is unavailable.
+* **Kernel Symlink Resolution**: Resolved versioned kernel paths and symlinks for U-Boot execution in Krill's `runSystem()`.
+* **Hardware Tooling & Guides**: Added Wi-Fi autoconnect scripts and comprehensive installation documentation under `spacemit/DOCS/`.
+
+### 📦 Multi-Arch Builder & CI Hardening
+* **Multi-Arch Packaging**: Enhanced `coa/pkg/builder/` for multi-architecture package generation (Debian, Fedora, openSUSE), generating compliant control dependencies and architecture-specific GRUB packages.
+* **Scoped Dependencies**: Restricted `genimage` dependencies to ARM and RISC-V architectures.
+* **CI Workflow Fixes**: Resolved `GITHUB_WORKSPACE` expansion in non-root execution environments within `.github/workflows/hammers.yml`.
+
+### 📚 Documentation Reorganization
+* **Structured Hierarchy**: Reorganized `DOCS/` into structured sections: Philosophy (`1-philosophy/`), User Manual (`2-user-manual/`), and Developer Manual (`3-developer-manual/`).
+* **Numbered Navigation**: Added numerical prefixes to documentation files for clear reading order, translated `DOCS/README.md` to English, and positioned the *Manifestum* as the opening document.
+
+## Release Notes: penguins-eggs v26.7.31 - 2026-07-31
+This release introduces offline locale detection and neutral `en_US.UTF-8` fallback handling in Krill, system-wide NetworkManager connection teardown during target installation, and XDG `/etc/skel` user profile credential sanitization.
+
+### 🌐 Krill Offline Locale & Neutral Fallback
+* **Network Connectivity Rationale**: Added `utils.HasNetworkConnectivity()` in `coa/pkg/utils/network.go` to probe TCP connectivity against public DNS endpoints (`8.8.8.8`, `1.1.1.1`, `9.9.9.9`).
+* **Neutral Default Selection**: Updated `DetectLanguage()` in `coa/pkg/sysinstall/krill/config.go` to default to `en_US.UTF-8` when offline, avoiding host build locale defaults (e.g. `it_IT.UTF-8`) on offline live environments.
+* **Resilient Locale Engine**: Enhanced `runLocale()` in `coa/pkg/sysinstall/krill/engine/system.go` to fall back to `en_US.UTF-8` in `/etc/default/locale` and `/etc/locale.conf` if network is inactive or if `locale-gen` fails.
+
+### 🧹 NetworkManager & /etc/skel Credential Sanitization
+* **System Connections Teardown**: Automatically purges stale live session connection keyfiles in `/etc/NetworkManager/system-connections/` during Krill's `runNetworkcfg` phase to prevent credential leaks and static IP conflicts.
+* **XDG Skel Sanitization**: Updated `HandleSkel()` in `coa/pkg/xdg/skel.go` to remove NetworkManager configurations, KDE network management state, and GNOME Keyring artifacts (`.config/NetworkManager`, `.local/share/networkmanagement`, `.local/share/keyrings`) from `/etc/skel`.
+* **Unit Test Coverage**: Added tests in `network_test.go` and `config_test.go` to validate network detection and connection cleanup routines.
+
+## Release Notes: penguins-eggs v26.7.30 - 2026-07-30
+This release introduces display manager autologin engine enhancements across Krill and live desktop systems (adding MDM, LXDM, SLiM, Greetd, and plasmalogin support), streamlines Calamares display manager module asset management, refactors autologin GUI worker logic, and adds comprehensive unit tests.
+
+### 🔐 Display Manager Autologin Engine (Krill TUI)
+* **Expanded DM Compatibility**: Added autologin configuration support in Krill (`coa/pkg/sysinstall/krill/engine/users.go`) for **MDM** (Mint Display Manager), **LXDM**, **SLiM**, **Greetd**, and **plasmalogin** (used on KDE/SDDM distributions like Soplos OS).
+* **Configuration Safety**: Implemented resilient parsing and configuration injection for `/etc/mdm/mdm.conf`, `/etc/lxdm/lxdm.conf`, `/etc/slim.conf`, and `/etc/greetd/config.toml`.
+* **Unit Testing**: Added dedicated test coverage in `users_test.go` to validate autologin configuration routines across supported display managers.
+
+### ⚙️ Calamares Display Manager Asset Simplification
+* **Static Module Asset**: Replaced runtime dynamic template generation for `displaymanager.conf` with a clean, static asset module in `coa/pkg/assets/calamares_base/modules/displaymanager.conf`.
+* **Setup Orchestration**: Streamlined `coa/pkg/sysinstall/setup/orchestrator.go` by removing obsolete template generation steps.
+
+### 🖥️ Live Desktop & Launcher Refinements
+* **GUI Autologin Worker**: Refactored `autologin-gui` worker logic in `coa/pkg/worker/autologin-gui.go` for cleaner execution.
+* **Desktop Launcher Icons**: Updated `coa/brain.d/base.yaml.tmpl` to handle terminal launcher visibility based on installer framework availability (Calamares vs Krill).
+* **Documentation**: Updated installer design specifications in `DOCS/design/installer.md`.
+
+## Release Notes: penguins-eggs v26.7.29 - 2026-07-29
+This release introduces dynamic hostname resolution for Calamares installer modules, automatic distro family fallback for derivatives via `ID_LIKE` / `LIKE_ID`, post-installation desktop launcher cleanup, Calamares slideshow visual refinements, interactive command execution fixes, and Chromebook support documentation.
+
+### 🌐 Calamares Hostname Integration
+* **Dynamic Hostname Default**: Configured `users.conf` module generation (`user-conf.go` and `users.conf.tmpl`) to dynamically pass `${host}` template macro, enabling Calamares to evaluate and pre-fill the live host's name from `/etc/hostname` during user setup.
+
+### 🐧 Distro Family Fallback & Derivative Support
+* **Derivative Auto-Detection**: Enabled automatic distro family fallback in `coa` for derivatives using `ID_LIKE` and added `LIKE_ID` compatibility matching to improve multi-distro remastering resilience.
+
+### 🧹 Post-Installation Cleanup & Desktop Integration
+* **Desktop Launcher Teardown**: Automatically removed live desktop launcher artifacts after installation completes in `sysinstall`.
+
+### 🎨 Calamares Slideshow & UI Refinements
+* **Slideshow Styling**: Centered slideshow text and panels, added translucent background panels behind slide text, and polished typography and hyperlink accents across Calamares installation slides.
+
+### 📚 Documentation & System Hardening
+* **Chromebook Documentation**: Added Chromebook support documentation to the user manual.
+* **Interactive Command Stdin**: Fixed stdin stream handling for interactive execution commands.
+
+## Release Notes: penguins-eggs v26.7.26 
+This release brings major enhancements to the Limine bootloader stack, installer auto-detection and confirmation workflows in `sysinstall`, support for Archcraft derivative environments, hardened `makepkg` packaging, LightDM/SDDM autologin PAM fixes, and safe `liveroot` chroot mounting.
+
+### 🥾 Limine Bootloader & NVRAM Integration
+* **NVRAM & EFI Synchronization**: Added UEFI NVRAM registration via `efibootmgr` for Limine installations and synchronized wallpaper configuration across EFI mount paths.
+* **Menu Hierarchy & Wallpapers**: Preserved hierarchical tree structures in boot menus and improved splash wallpaper configuration injection.
+* **ESP Path & Target Root UUID**: Ensured exact `ESP_PATH` and target partition root UUID injection into Limine configuration files, maintaining consistent `limine.conf` copies across EFI paths.
+* **Bootloader Transparency**: Implemented the Principle of Transparency across bootloader configuration modules.
+
+### 💾 sysinstall & Krill Installer Enhancements
+* **Installer Auto-Detection & Launchers**: Added automatic installer detection, `pkexec` desktop launcher support, and an explicit interactive confirmation summary step before proceeding with Krill installation.
+* **Dynamic EFI Bootloader Labels**: Dynamically resolved host `DistroID` for EFI bootloader registration to prevent hardcoded `oa-live` labels.
+* **Hostname Resolution**: Updated Krill hostname resolution to read default hostname from `/etc/hostname` with fallback to `naked`.
+
+### 🏹 Archcraft Derivative Support & Packaging Hardening
+* **Archcraft Recognition**: Added distro recognition for **Archcraft** under the Arch family definitions (`brain.d/index.yaml`).
+* **Makepkg Output Enforcement**: Explicitly forced `PKGDEST` and `PKGEXT` environment settings during `makepkg` execution to align with Alpine packaging conventions, ensuring packages built on Arch derivatives (such as BigLinux) are correctly located in stage.
+
+### 🔐 Display Manager & PAM Autologin Fixes
+* **LightDM Non-Interactive Autologin**: Prepended a service-scoped `pam_permit.so` rule to `lightdm-autologin` PAM stack to eliminate non-interactive login failures ("conversation failed") without touching live user SSH/PAM defaults.
+* **SDDM Configuration Guard**: Corrected SDDM autologin setup condition to only write SDDM autologin configurations when SDDM is present.
+
+### 🐧 Chroot & Mount Propagation Safeguards
+* **Liveroot Self-Bind**: Enforced a private bind-mount of `liveroot` onto itself before `chroot` execution with `--make-private` propagation. This ensures tools requiring `/` to be a distinct mountpoint (such as `pacman`'s disk space check) succeed while preventing mount propagation leaks during teardown.
+* **Brain Distro Structure**: Split distribution module templates into dedicated `remaster/` and `install/` subdirectories for clearer separation of concerns.
+
+## Release Notes: penguins-eggs v26.7.24 - 2026-07-24
+This release brings full compatibility and end-to-end remastering support for Arch Linux and its major derivatives (**Arch, EndeavourOS, Garuda Linux and CachyOS**), alongside critical bootloader enhancements for Limine, systemd-boot, and GRUB, installer refinements, and robust initramfs module handling.
+
+### 🏹 Broad Arch-Family & Derivative Parity (Arch, EndeavourOS, Garuda, CachyOS)
+* **Distro Detection**: Extended distribution identification in [coa/pkg/utils/os.go](file:///home/artisan/forge/penguins-eggs/coa/pkg/utils/os.go) to explicitly recognize **CachyOS** and **RebornOS** as members of the Arch family via both `ID` and `ID_LIKE` parameters.
+* **Dracut Target Support**: Enabled seamless `dracut` initramfs generation for **EndeavourOS** and **Garuda Linux** within [coa/brain.d/modules/arch-family.bash.tmpl](file:///home/artisan/forge/penguins-eggs/coa/brain.d/modules/arch-family.bash.tmpl), providing explicit target initramfs output paths during installation.
+* **Live Storage Drivers**: Added `isofs` and `sr_mod` kernel modules into the live `mkinitcpio` configuration for Arch-family hosts, guaranteeing reliable ISO boot from optical and USB live media.
+* **Initramfs Cleanups**: Removed obsolete `fsck` hooks from Arch/Manjaro live `mkinitcpio.conf` templates and ensured kernel version detection uses `uname -r` for accurate initramfs correlation.
+
+### 🥾 Bootloader Engine Refinements (GRUB, Limine & systemd-boot)
+* **Bootloader Selection & Ordering**: Optimized default bootloader prioritization to favor systemd-boot and GRUB, while resolving Limine partition UUID resolution and `fstab` parsing issues.
+* **Limine Syntax & Staging**: Fixed Limine configuration syntax (replacing invalid `initramfs_path` with `module_path`, ensuring leading slashes in entry titles), and corrected ESP kernel/initramfs staging.
+* **EFI Trampoline Fix**: Corrected copying of the EFI trampoline `grub.cfg` directly into `efi.img` for UEFI bootable media.
+* **Symlink Dereferencing**: Ensured `krill` dereferences kernel symlinks (`/boot/vmlinuz-*`) when preparing systemd-boot and Limine boot parameters.
+* **Dynamic Distro Labels**: Configured systemd-boot and Limine boot entries to dynamically fetch and display the host's `PRETTY_NAME` from `/etc/os-release`.
+
+### 🛠️ Krill Installer & Remastering Teardown
+* **Simplified Installer Flow**: Streamlined the `krill` TUI installer sequence by removing the manual network configuration screen and defaulting to automatic DHCP configuration.
+* **Teardown Error Handling**: Enforced complete unmount sequence during `destroy` teardown operations and properly propagated teardown failures to prevent stale mount points.
+* **Alpine Btrfs Hook**: Added `btrfs` initramfs feature generation for Alpine Linux targets running on Btrfs file systems.
+
+## Release Notes: penguins-eggs v26.7.18 - 2026-07-18
+This release transitions the versioning scheme from semantic versioning (`v0.9.x`) to calendar-based versioning (`vYY.M.D`).
+
+### 📅 Versioning Scheme Update
+* **Transition to CalVer**: Switched the package versioning pattern to calendar-based versioning `vYY.M.D` matching the release date (year, month, day).
+* **AUR Compatibility & Versioning**: Adopted this calendar-based format to resolve dependency and update conflicts with the legacy `penguins-eggs` package currently present in the Arch User Repository (AUR). The previous `v0.9.x` versions were treated as older/inferior compared to the old TypeScript-based `penguins-eggs` package versions already in AUR, preventing installation. CalVer solves this upgrade compatibility issue immediately and avoids the need to artificially inflate standard release numbers.
+
+## Release Notes: penguins-eggs v0.9.6 - 2026-07-16
+This release introduces a new **Go-based Incubator CI** for automated ISO testing, alongside critical bootloader installer fixes, user creation safeguards, vendor branding custom steps, and wardrobe permission enhancements.
+
+### 🐣 Go-based Incubator CI
+* **Native Go Testing**: Replaced the legacy 400-line bash script (`ci/incubator.sh`) with a native Go orchestrator (`incubator-go`) installed on Proxmox.
+* **Refined Test Matrix**: Configured automated test runs for `ext4` BIOS, `ext4` UEFI, and `btrfs` UEFI target installs sequentially to prevent server overload.
+* **Integrated GHA Reports**: Automatically fetches Markdown test logs from Proxmox and merges them directly into the GitHub Actions step summary using [.github/workflows/incubator-go.yml](file:///home/artisan/forge/penguins-eggs/.github/workflows/incubator-go.yml).
+
+### 💾 sysinstall & Bootloader Improvements
+* **Resilient UEFI Boot**: Tolerate NVRAM registry failures during `grub-install` on UEFI target environments and always populate the `EFI/BOOT/BOOTX64.EFI` fallback inside [coa/brain.d/modules/arch-family.bash.tmpl](file:///home/artisan/forge/penguins-eggs/coa/brain.d/modules/arch-family.bash.tmpl), [coa/brain.d/modules/alpine.bash.tmpl](file:///home/artisan/forge/penguins-eggs/coa/brain.d/modules/alpine.bash.tmpl), and [coa/brain.d/modules/debian.bash.tmpl](file:///home/artisan/forge/penguins-eggs/coa/brain.d/modules/debian.bash.tmpl).
+* **Arch UEFI Fallback Fix**: Restored vendor directory and NVRAM registrations for Arch Linux targets by running a standard install first, followed by manual fallback file copying (bypassing the limiting `--removable` flag).
+* **systemd-boot Microcode Fix**: Resolved a kernel file corruption issue in systemd-boot configuration templates inside [coa/brain.d/modules/arch-family.bash.tmpl](file:///home/artisan/forge/penguins-eggs/coa/brain.d/modules/arch-family.bash.tmpl) where the microcode initrd line was appended to the kernel line without a newline.
+* **Target Network Activation**: Added a dedicated step to enable `NetworkManager` and `systemd-resolved` units inside the chroot in [coa/brain.d/base.yaml.tmpl](file:///home/artisan/forge/penguins-eggs/coa/brain.d/base.yaml.tmpl), ensuring DNS and network work out-of-the-box on the installed target.
+* **Mount Bind Fix**: Corrected `extraMounts` options in [coa/pkg/sysinstall/setup/template/mount.conf.tmpl](file:///home/artisan/forge/penguins-eggs/coa/pkg/sysinstall/setup/template/mount.conf.tmpl) back to a YAML list, fixing broken `/dev` and `/run/udev` bind mounts inside Calamares.
+
+### ⚙️ Calamares & User Management
+* **User Creation Collision Fix**: Moved the `removeuser` module right after `unpackfs` in [coa/pkg/assets/calamares_base/settings.conf](file:///home/artisan/forge/penguins-eggs/coa/pkg/assets/calamares_base/settings.conf). This avoids conflicts and failures (exit 9) when creating the new target user with the same username as the live user.
+* **Target Failures Monitoring**: The chroot runner script now returns a non-zero exit code if any execution step fails, ensuring installation failures are visible in logs.
+* **Autologin Recovery**: Enabled `chroot: true` for the `autologin-gui` module in [coa/brain.d/base.yaml.tmpl](file:///home/artisan/forge/penguins-eggs/coa/brain.d/base.yaml.tmpl) and updated [RunAutologin()](file:///home/artisan/forge/penguins-eggs/coa/pkg/worker/autologin-gui.go#L12) to dynamically handle the custom live username instead of using a hardcoded placeholder.
+
+### 👔 Wardrobe & tailor Enhancements
+* **su Elevation Support**: Enhanced [getWardrobeRoot()](file:///home/artisan/forge/penguins-eggs/coa/pkg/tailor/get-wardrobe-root.go#L24) to resolve the real user's home directory using kernel audit `logname` and `/etc/passwd` scanning, ensuring wardrobe functions work on distros using `su` instead of `sudo`.
+* **Early Privilege Check**: Force `coa wardrobe wear` to exit immediately if executed without root privileges, removing redundant internal `sudo` command executions.
+* **skel Sync Permissions**: Sincronized `/etc/skel` files using `rsync` with explicit non-root user chown arguments, preventing target home folder assets from being locked by root ownership.
+
+### 🎨 Custom Vendor Branding
+* **Vendor Custom Finish Step**: Support executing a custom vendor `finish.sh` script via [vendorFinishStep()](file:///home/artisan/forge/penguins-eggs/coa/pkg/sysinstall/setup/vendor-finish.go#L25) during the Calamares sequence before the bootloader installation, allowing costumes to customize configuration templates.
+* **Branding Asset Overlays**: Allow wardrobes to supply customized logos, slideshows, and `branding.desc` descriptors under the `/etc/penguins-eggs.d/brain.d/assets/calamares/` path.
+
+### 🛠️ Core Optimizations
+* **Native SHA-512 Hashing**: Replaced external `openssl` shell calls with the native Go `sha512_crypt` library in [hashPassword()](file:///home/artisan/forge/penguins-eggs/coa/pkg/planner/hash-password.go#L10) for hashing password inputs during planning.
+
+## Release Notes: penguins-eggs v0.9.5 - 2026-07-14
+This release introduces **Universal Btrfs Support** across all distributions, along with bootloader customizations, compression optimizations, installer flexibility, and critical robustness enhancements.
+
+### 💾 Universal Btrfs Support
+* **Btrfs GRUB Boot Symlink**: Automatically creates a `/boot` to `/@/boot` symbolic link at the Btrfs partition root level for Arch Linux and Manjaro. This resolves boot failures when GRUB boots from the generic removable UEFI path.
+* **Krill Btrfs Detection**: Improved detection logic within the Krill installer to reliably configure Btrfs hooks and initramfs settings when executing inside a chroot environment.
+* **Btrfs Batch CI Integration**: Fully automated and verified Btrfs UEFI template cloning and testing within the Incubator Batch CI framework.
+
+### 🗜️ Compression & Boot Customizations
+* **XZ Compression Filter**: Applies the x86 BCJ filter (`-Xbcj x86`) when squashing filesystems using the `xz` algorithm, significantly improving compression ratios on x86/x64 systems.
+* **RAM Mode Toggle**: Added configuration options to allow disabling the 'RAM mode' (toram) entry in the generated GRUB and ISOLINUX bootloader menus.
+* **Vendor Theme Customization**: Supported custom, vendor-supplied GRUB and ISOLINUX themes and menu labels (`menu-strings.conf`) for complete branding of the boot process.
+
+### 🛠️ Remastering Robustness
+* **Resilient Builds**: Automatically clean up residual mountpoints and staging assets from previous interrupted runs to prevent build contamination.
+* **Bypass systemd-firstboot**: Automatically pre-populate essential settings (defaulting `localtime` to UTC, generating a basic locale and hostname) when they are missing in the build source, preventing interactive systemd setup prompts on boot.
+* **Idempotent Bootstrapping**: Improved safety and idempotency of the live root bootstrap script.
+* **Non-Interactive Tailoring**: Passes `--force-confold` during package installation tasks to guarantee non-interactive executions on Debian-family hosts.
+
+### ⚙️ sysinstall & Calamares Enhancements
+* **Init-Aware machine-id**: Dynamically configures the machine ID setup module based on the host's running init system (supporting both systemd and non-systemd setups).
+* **Vendor Users.conf Override**: Allows vendors and costumes to override default Calamares user configurations and password UI requirements.
+* **Group Membership Safeguards**: Resolves a bug where the live user could lose their default groups if the remaster was executed from a root shell.
+* **Calamares Mount Options Fix**: Fixed a template bug by correcting `extraMounts` options type from list to string.
+
+### 🏹 Distribution & TUI Adjustments
+* **Garuda Linux**: Included full setup support for Garuda Linux in the Arch-family module.
+* **Quirinux**: Properly recognized Quirinux as a Debian-family derivative.
+* **Sudo-less Wardrobes**: Fixed path resolution for wardrobe configuration detection on systems running without `sudo`.
+* **TUI Navigation**: Fixed configuration TUI navigation bugs when skipping hidden fields.
+
+## Release Notes: penguins-eggs v0.9.3 - 2026-07-09
+This release introduces **Incubator Batch CI**, a new automated testing framework, along with extensive improvements to the `sysinstall` architecture, Krill installer, security defaults, and cross-distribution support.
+
+### 🐣 Incubator Batch CI (Automated ISO Testing)
+* Developed the **Incubator Batch CI** (`ci/incubator.sh` and `.github/workflows/incubator.yml`) to orchestrate automated, end-to-end testing of remastered live ISOs on a Proxmox VE host.
+* Deploys and configures a clean QEMU virtual machine for each distribution, booting the generated ISO and executing a fully automated `krill` unattended installation.
+* Interacts with the VM via QEMU Guest Agent (`qemu-guest-agent`) to monitor execution, collect installer output, retrieve serial logs, and verify successful boot of the installed system.
+* Automatically captures console outputs (`console-SUCCESS-*.log`/`console-FAILED-*.log`) and publishes comprehensive batch reports to GitHub Actions.
+
+### 🛠️ sysinstall & Krill Installer
+* **Filesystem & Partitioning**:
+  * Added `--fstype` flag to specify partition filesystem type (e.g., ext4, btrfs) during unattended install.
+  * Added automatic partition signature wiping and specified filesystem mount types to prevent Btrfs volume collisions.
+  * Integrated dedicated, modular bootloader templates for GRUB, systemd-boot, and Limine on Fedora, openSUSE, Arch, and Manjaro.
+  * Full support for Btrfs subvolumes in Krill.
+* **Network & Adaptations**:
+  * Added Netplan configuration support and fixed DNS formatting in `resolv.conf`.
+  * Fallback to active physical network interfaces when the default network route is missing.
+  * Improved static IP configuration for Arch Linux (covering dhcpcd, NetworkManager, and systemd-networkd).
+* **Hardware & CLI**:
+  * Added poweroff option to unattended installations to support automated VM shutdown.
+  * Added support for StarFive/Spacemit RISC-V platforms.
+  * Dynamic plan execution in the installer using `coa ell`.
+  * Configured `calamares` and live-user options directly via the TUI configuration module.
+
+### 🐧 Distribution Compatibility
+* **Fedora**: Implemented a "Kamikaze" service to bypass SELinux blocking during the first post-installation boot, automatically restoring SELinux enforcing mode once the relabel process is complete.
+* **openSUSE**: Fixed UEFI/Btrfs bootloader installation and disabled SELinux by default.
+* **Devuan**: Added full Devuan support as a Debian-family distribution.
+* **Non-systemd Distros**: Enabled tty/console support by forcing `inittab` reloading and hot-reloading configurations.
+
+### 🔒 Security & Autologin
+* Removed `autologin-gui` from default plans to disable automatic GUI login by default, enhancing security.
+* Restored desktop autologin wrapper to preserve passwords for CLI and SSH logins.
+* Fixed live user sudo permissions by adding explicit passwordless rules for `liveuser`, `linux`, `wheel`, and `sudo` groups in the templates.
+* Enabled `nullok` in PAM configuration files during autologin setups to support passwordless credentials.
+
+## Release Notes: penguins-eggs v0.9.2 - 2026-06-29
+The package officially changed its name from **oa-tools** to **penguins-eggs**.
+
+### 🚨 BREAKING CHANGE:
+A manual uninstallation of the old penguins-eggs package is required prior to installing this release. Ensure your system is clean from the previous version before proceeding.
+
+### Alpine Linux — fully stable
+Alpine live boot is now fully working. A custom **OA-SIDECAR** is injected into the initramfs during remastering: it intercepts Alpine's standard init after `recovery_shell()`, locates the ISO via `findfs LABEL=OA_LIVE`, mounts the squashfs with an overlayFS layer, and performs `switch_root` into the live system. All six supported distributions (Alpine, Arch, Debian, Fedora, Manjaro, openSUSE) are now stable.
+
+## Release Notes: penguins-eggs v0.9.1 - "Functional parity" 2026-06-20
+penguins-eggs (C/Go) has reached functional parity with penguins-eggs (legacy).
+
+### Features
+- **Interactive config command** — `coa config` TUI for compression, iso_prefix, password settings
+- **Polkit policy** — passwordless installer launch on live/clone/crypted systems
+- **Disk space pre-check** — validates free space before remastering starts
+- **gshadow/subuid/subgid support** — full user database handling in native C module
+- **Comprehensive exclude list** — extended exclusions for cleaner squashfs
+
+### Improvements
+- **`export iso` uses iso_prefix from config** — no longer builds pattern from distro info when a custom prefix is set
+- **`custom.yaml` field-level merge** — individual settings override defaults without replacing the entire block
+- **Compression settings from config** — planner injects algorithm/level from config, removed hardcoded values
+- **Full mksquashfs command in logs** — replaces summary profile line for better debugging
+- **Reordered base.yaml.tmpl** — polkit as its own step, sequential numbering
+
+### Code cleanup
+- Removed ~370 lines of redundant comments, dead code, and unused struct fields across Go and C
+- Added include guard to `logger.h`, fixed double `OE_UID_HUMAN_MIN` define
+- Removed tracked `.o` files
+
+### Translation
+- All Italian user-facing messages translated to English (Go + C)
+
+**Full Changelog**: https://github.com/pieroproietti/penguins-eggs/compare/v0.9.0...v0.9.1
+
+###   added  ISO size and time in a single success line;
+
+
+## Release Notes: penguins-eggs v0.9.0 - "The Installer" 2026-06-19
+
+### Overview
+This release introduces **Krill**, the native TUI installer, and completes a deep reorganization of the installation architecture with the `sysinstall` package. It also includes LUKS encryption support, full English internationalization, and significant security hardening.
+
+### Krill - TUI Installer
+- Native TUI installer with interactive screens for Disk, Users, and Network with real system data
+- Reads shared configuration generated by the preparation pipeline
+- Full support for both BIOS and UEFI systems
+- Unified preparation pipeline shared between Calamares and Krill
+
+### sysinstall Architecture
+- Complete refactoring: `calamares` → `sysinstall/core`, `sysinstall/calamares`, `sysinstall/krill`
+- systemd-boot support
+- Prevent sysinstall calamares/krill from running on already installed systems
+
+### Security & LUKS
+- Full LUKS encryption support with algorithm selection via TUI
+- Passphrase passed via stdin, never written to disk
+- Fixed security vulnerabilities in C code
+
+### CLI & Internationalization
+- Translated all Go messages and prompts from Italian to English
+- Translated `base.yaml.tmpl`
+- CLI cleanup: removed `detect` and `config` commands, hidden internal commands, added `produce` alias
+- Hidden `wardrobe` command
+- Centralized hardcoded paths in `pkg/config`
+- Replaced `--mode` with boolean flags `--clone` and `--crypted`
+
+### Remastering & Build
+- ISO naming now includes variant (clone/crypted) before the architecture
+- Reduced verbose output from dracut/mkinitramfs during remastering
+- Clean up residual autologin entries in lightdm.conf
+- Locale selection and usage support
+- Makefile refactoring
+- Universal Calamares configuration
+
+## Release Notes: penguins-eggs v0.8.6 - "The Logic Tractor" 2026-06-10
+
+### Overview
+This release marks a fundamental shift in the development lifecycle of `penguins-eggs`. We have transitioned from a monolithic, script-based approach to a highly orchestrated, multi-layered architecture. By separating high-level planning from mechanical execution, we have transformed the build process into a robust, predictable pipeline.
+
+### The Architectural Shift
+In developing this version, we embraced a design philosophy rooted in the separation of concerns:
+
+* **The Declarative Layer (JSON/Plan):** We now define *what* the system should achieve through a declarative JSON-based plan. This is the "knowledge" of the build—a high-level map that remains agnostic of the underlying implementation details.
+* **The Orchestration Layer (Go):** This acts as the "Logic Tractor." It parses the high-level plan and translates it into specific, deterministic actions. By isolating the logic from the mechanics, we have eliminated the fragility of tightly coupled scripts, ensuring that the control flow remains consistent regardless of the environment.
+* **The Mechanical Layer (Bash/C):** This layer handles the "heavy lifting." By delegating the execution to focused, modular Bash scripts, we have replaced complex inline templating with clean, testable, and reliable procedures.
+
+### Key Technical Achievements
+* **Decoupled Orchestration:** Moving from hardcoded logic to a modular, plan-driven execution model has drastically reduced build failures and increased system observability.
+* **Universal Bootloader Logic:** We have standardized the bootloader installation process. By injecting a unified, self-contained installation script (`oa-bootloader.sh`) into the target chroot, we successfully resolved the long-standing cross-compatibility issues between BIOS/Legacy and UEFI systems.
+* **Atomic Cleanup:** Through the integration of the final cleanup phase directly into the deployment logic, we have ensured that no live artifacts persist in the installed environment. The system is now as clean as a fresh, official distribution install, with zero manual overhead.
+
+### Reflection
+Building this system has been an exercise in structural engineering. Just as modern intelligent systems rely on the separation of data, logic, and execution, `penguins-eggs` now follows these fundamental laws. The "Logic Tractor" no longer struggles with the "hoe"—the separation of the orchestrator from the machinery has granted us a level of scalability and stability that was previously unattainable.
+
+This release is not just a collection of bug fixes; it is the foundation for a professional-grade build infrastructure.
+
+## Release v0.8.5: The Declarative Evolution 🚀 2026-06-06
+This release marks a fundamental architectural milestone for the framework. We have successfully transitioned from a heavily imperative Bash-scripted workflow to a clean, highly robust **declarative YAML orchestration** model. 
+
+The engine is now smarter, the codebase is significantly lighter, and the remastering flight plan is easier to read, maintain, and extend.
+
+### 🌟 Key Architectural Changes
+
+* **The Declarative Engine (`base.yaml.tmpl`)**: The entire live ISO generation process is now orchestrated by a master YAML plan. This provides an Ansible-like, step-by-step clear overview of the remastering and installation hooks.
+* **The `oa_ell` Bridge**: Upgraded the internal Go worker (`cmd/ell.go`) to act as a flawless bridge between the C engine and the system. It features a new, indestructible JSON router capable of seamlessly handling tasks like dynamic templating, file copying, and native shell execution.
+* **Massive Bash Reduction**: Hundreds of lines of complex, imperative Bash logic have been retired. Core configurations—including bootloader staging (GRUB/ISOLINUX), sudoers setup, trusted desktop launchers, universal autologin, and SVG icon generation—are now handled purely through declarative `ell-actions.tmpl` tasks.
+
+### 🛠️ Core Improvements & Fixes
+
+* **Unified Squashfs Compression**: Streamlined the root filesystem compression logic (`core_squashfs`). Dropped legacy container-build workarounds in favor of a highly optimized, dynamically injected local profile (defaulting to multi-core `zstd` with automatic fallback configurations).
+* **Bulletproof YAML Parsing**: Resolved deep-level scope and Go-template injection edge-cases (`{{- include ... }}`). The `pilot` engine now generates the exact JSON flight plan flawlessly, immune to invisible characters or indentation mismatches.
+* **Library Standardization**: Reorganized the template libraries with clear roles and strict 80-column headers (`base.yaml.tmpl`, `scripts.tmpl`, `ell-actions.tmpl`), establishing a clean standard for future open-source contributions.
+* **Smarter User Identity Handling**: The internal worker now reliably maps and sanitizes user data, executing native identity injection (e.g., creating the `live` user with specific groups and GID/UID) without dropping to shell scripts.
+
+### 🎯 What's Next?
+With the YAML/Go/C orchestration bridge now fully operational and stable, the framework's foundation is rock-solid. Adding new features or supporting new distributions is now just a matter of adding a few declarative lines to the YAML plan.
+
+
+## [0.8.4] - 2026-06-03
+
+### Added
+- **New universal `coa tools grub40` command**: Introduced an advanced feature to automate loopback booting of any Linux ISO directly from the host's GRUB menu, eliminating the need for USB flashing during remastering tests.
+  - **Ultra-fast inspection via `bsdtar`**: Switched from `xorriso` to native `bsdtar` parsing. The tool now dissects the target ISO in milliseconds, extracting the real paths of Kernel and Initrd from internal configuration files (`grub.cfg`, `isolinux.cfg`).
+  - **Dynamic handling for Arch Linux (Kiro/Archiso)**: Resolved the recovery shell boot hang (`device did not show up`) by injecting the GRUB `probe` module. GRUB dynamically calculates the host partition's UUID at runtime, passing it to Archiso via `img_dev` and `img_loop` parameters.
+  - **Native Debian/Ubuntu integration**: Seamless support for the `live-boot` engine by automatically mapping the `findiso` boot parameter.
+  - **Automation with `--write` / `-w` flag**: Added the ability to directly inject the generated `menuentry` into `/etc/grub.d/40_custom`.
+  - **Surgical replacement using markers**: The injection mechanism uses unique identifier comments based on the ISO filename (`# >>> penguins-eggs start...`). This automatically overwrites existing entries when rebuilding the same ISO, preventing file clutter while strictly preserving file execution permissions (`0755`).
+  - **Smart host distro detection**: Automatically identifies the host operating system to suggest or run the correct bootloader update command (`update-grub` on Debian/Ubuntu, `grub-mkconfig` on Arch/Fedora).
+  
+
+## [0.8.3] - 2026-06-01 
+
+### Added
+- **The Furnace CI**: Fully automated Proxmox/GitHub Actions pipeline for unattended ISO generation.
+- Support for automated build matrices across Arch, Debian, Alpine, and Fedora.
+- Dynamic IP discovery in CI via targeted ARP sweep (bypassing static MAC/IP configurations).
+- `repo add` and `repo rm` commands for cross-distribution repository management.
+- Bugfix: Resolved an issue where the ISO dropped to (initramfs) in VirtualBox by implementing the proper .disk/info and .disk/id metadata for Debian live-boot.
+- Build: Cleaned up the release version naming in the Makefile by removing the commit hash from the generated tags.
+- Added coa tools grub40 command to automatically generate universal GRUB 40_custom entries for booting ISOs via loopback.
+
+### Fixed
+- Handled missing `/etc/skel` and BusyBox `cp` limitations during the creation of the live user home directory on Alpine Linux.
+- Bypassed Linux kernel ping broadcast restrictions during automated CI network discovery.
+
+### Changed
+- Improved SELinux compatibility during the remastering process for Fedora-based systems.
+
+### Deprecated / Beta
+- `repo add/rm` commands are currently in Beta for openSUSE and Alpine Linux pending minor compatibility fixes.
+
+## 🚀 penguins-eggs v0.8.2: Packaging fixes, dynamic exclusions & Config rollout
+
+I believe these new features will be highly interesting for many users: the ability to change the live user password and customize the compression algorithm, as well as easily add or remove custom exclusions during the remastering process.
+
+* **feat(config):** officially published the configuration file (`/etc/penguins-eggs.d/custom.yaml`, previously omitted by mistake). Users can now easily customize system-wide settings, including the live user password, as well as mksquashfs compression algorithms and parameters.
+* **feat(engine):** revamped `/etc/penguins-eggs.d/custom.exclude.list` with robust parsing (elegantly ignoring comments and blank lines) and populated it with default exclusions for heavy container engines (Docker, Podman, LXC/LXD) and Snap. Users can easily disable these defaults or expand the list at will to keep their generated ISOs perfectly lean.
+
+## 🚀 penguins-eggs v0.8.0: The Architectural Leap & Expanded Horizons
+
+This is a fundamental release for `penguins-eggs`, introducing a rock-solid template architecture and extended support for new distributions.
+
+### ✨ Key Features & Improvements
+* **Bulletproof Template Architecture:** Introduced strict `core_` and `hook_` nomenclature for all templates. This eliminates silent "shadowing" conflicts and provides a highly scalable foundation (ready for the upcoming Bianbu OS / RISC-V porting).
+* **Alpine "Sidecar" Parachute:** Implemented a native recovery system in the initramfs for Alpine Linux, ensuring stable OverlayFS mounting and virtual filesystem relocation right before OpenRC boot.
+* **openSUSE Support:** Added full support for openSUSE, bringing `penguins-eggs` on par with the historical parent distributions supported by `penguins-eggs`.
+* **CLI & UX Enhancements (Cobra):** * Native shell auto-completion (Bash/Zsh/Fish) dynamically generated during `.deb` packaging for both `coa` and the legacy `eggs` alias.
+    * New `coa export log` command to instantly extract debug logs to a remote host via SSH.
+* **Semantic Polish:** Renamed the destructive command to `eggs destroy` to align with standard DevOps terminology.
+
+
+### 🐧 penguins-eggs v0.7.9 - The CI/CD & Architecture Release
+
+**Evolution Architecture**
+* **Decoupled Engine & Pilot:** Completely refactored the Go architecture to eliminate import cycles. Environmental awareness (like detecting GitHub Actions) is now handled natively by the `cmd` package (Command Bridge), leaving `engine` and `pilot` strictly agnostic and modular.
+* **Dynamic Template Injection:** The `TemplateContext` now dynamically receives environmental flags to adapt script generation on the fly without logic duplication.
+
+**CI/CD & Automation Breakthrough**
+* **GitHub Actions Turbo Mode:** Introduced automatic CI detection. When running on GitHub Actions, the system auto-injects a "Turbo" profile for `mksquashfs`, applying aggressive zstd compression and smart exclusions to slash ISO size (down to 6.4GB) and drastically reduce build times.
+
+## 🐧 penguins-eggs v0.7.8 - 
 
 - **Smart Desktop Management**: Installation links are now dynamically handled and automatically removed after a successful installation, keeping the target `/etc/skel` clean.
 
@@ -28,7 +448,7 @@
 
 ## Release v0.7.6: New Template Architecture** - 2026-05-10
 
-This release marks a fundamental structural shift for `oa-tools`: the transition to a modular build system. 
+This release marks a fundamental structural shift for `penguins-eggs`: the transition to a modular build system. 
 
 We have separated the system logic using templates:
 * **Universal framework:** Actions common to all systems are now centralized in `brain.d/base.yaml.tmpl`.
@@ -48,7 +468,7 @@ This approach drastically reduces code complexity compared to previous versions 
 ### Fixed
 - **Fedora UEFI Visibility**: Added `efi_gop` and `efi_uga` modules to GRUB configuration to fix splash screen issues in UEFI mode.
 - **Isolinux Compatibility**: Standardized the `APPEND` syntax for boot parameters, ensuring a successful boot on Fedora and other non-Debian systems even when using Debian bootloaders.
-- **RPM Asset Packaging**: Updated the Go builder to correctly package and deploy branding assets into `/etc/oa-tools.d/brain.d/assets/`.
+- **RPM Asset Packaging**: Updated the Go builder to correctly package and deploy branding assets into `/etc/penguins-eggs.d/brain.d/assets/`.
 
 ### Technical Notes
 - The "oa" dialect is now fully established for egg-based eggs-bananas remastering.
@@ -58,7 +478,7 @@ This approach drastically reduces code complexity compared to previous versions 
 
 Fedora is now aligned to the others distros: arch, debian and manjaro.  
 
-This release marks a turning point for **oa-tools**. We have moved beyond chasing the specific quirks of individual distributions to build a universal, fluid, and frictionless infrastructure. 
+This release marks a turning point for **penguins-eggs**. We have moved beyond chasing the specific quirks of individual distributions to build a universal, fluid, and frictionless infrastructure. 
 
 ### 🏗️ Architectural Evolution
 The core has been surgically redesigned to separate concerns between the "Brain" and the "Muscle":
@@ -102,7 +522,7 @@ This release marks a significant step in the **eggs-bananas** philosophy, delive
 This minor release focuses on code purification and structural robustness, following our core "Eggs & Bananas" philosophy. We've removed redundant configuration files and refined the distro-agnostic engine for better performance and reliability.
 
 ### Added
-- **Smart Directory Management**: The Arch Linux and Manjaro builders now correctly install the `brain.d` logic directory into `/etc/oa-tools.d/`, ensuring agnostic mapping is available immediately after installation.
+- **Smart Directory Management**: The Arch Linux and Manjaro builders now correctly install the `brain.d` logic directory into `/etc/penguins-eggs.d/`, ensuring agnostic mapping is available immediately after installation.
 - **Enhanced Distro Detection**: Integration with system `ID_LIKE` metadata allows for seamless recognition of derivative distributions without external mapping files.
 
 ### Changed
@@ -257,7 +677,7 @@ Ho sistemato il Changelog includendo tutti i punti chiave discussi. Buona semina
 ## [0.2.0] - 2026-04-01
 
 ### Added
-- **Anti-Recursion Shield (Inception Fix)**: Implemented a global `tmpfs` mask in `action_prepare.c` to hide the working directory (`pathLiveFs`) from `mksquashfs` and `nftw`. This definitively prevents infinite filesystem loops when the workspace is located inside a bind-mounted host directory (like `/home`).
+- **Anti-Recursion Shield (Inception Fix)**: Implemented a global `tmpfs` mask in `action_prepare.c` to hide the working directory (`LiveRoot`) from `mksquashfs` and `nftw`. This definitively prevents infinite filesystem loops when the workspace is located inside a bind-mounted host directory (like `/home`).
 - **Native Group Injection**: Added the `yocto_add_user_to_groups` helper in `oa-yocto.c` to natively append the live user to secondary groups (e.g., `sudo`, `cdrom`) directly into `/etc/group`, completely bypassing host binaries.
 - **Skeleton Population**: `action_users` now correctly populates the live user's home directory by copying hidden configuration files from `/etc/skel` and applying recursive ownership.
 
@@ -290,3 +710,7 @@ Ho sistemato il Changelog includendo tutti i punti chiave discussi. Buona semina
 
 ---
 *"Code is poetry, but the changelog is the history."*
+
+### blog
+* [https://penguins-eggs.net](https://penguins-eggs.net)
+* [llms.txt](https://penguins-eggs.net/llms.txt)

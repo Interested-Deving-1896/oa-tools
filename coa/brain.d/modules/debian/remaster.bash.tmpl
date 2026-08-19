@@ -1,0 +1,39 @@
+# ==============================================================================
+# 🌀 MODULO DEBIAN / UBUNTU - REMASTER
+# ==============================================================================
+
+# ----------------------------------------------------------------------------
+# DECLARATIVE CONSTANTS 
+# ----------------------------------------------------------------------------
+{{ define "distro_boot_params" }}boot=live components cow_spacesize=2G{{ end }}
+
+# ----------------------------------------------------------------------------
+# 5. INITRAMFS LIVE
+# ----------------------------------------------------------------------------
+{{ define "distro_initramfs_cmd" }}
+# debian: distro_initramfs_cmd: no need operations
+"true"
+{{ end -}}
+
+# ----------------------------------------------------------------------------
+# 6. COPY KERNEL/INITRD
+# ----------------------------------------------------------------------------
+{{ define "distro_copy_kernel_cmd" }}
+#!/bin/bash
+set -e
+# debian: distro_copy_kernel_cmd
+
+KERNEL_VERSION=$(uname -r)
+echo "-> Copia Kernel Debian/Ubuntu ($KERNEL_VERSION)..."
+
+cp "/boot/vmlinuz-$KERNEL_VERSION" /home/eggs/isodir/live/vmlinuz
+cp "/boot/initrd.img-$KERNEL_VERSION" /home/eggs/isodir/live/initrd.img
+{{ end }}
+
+# ----------------------------------------------------------------------------
+# 8.1 HARDLINK TO isodir/live/filesystem.squashfs in arch, fedora, manjaro
+# ----------------------------------------------------------------------------
+{{ define "distro_hook_squashfs" -}}
+# debian: distro_hook_squashfs: no need operations
+"true"
+{{ end -}}

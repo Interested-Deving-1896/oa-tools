@@ -1,0 +1,251 @@
+package parser
+
+import (
+	"bytes"
+	"fmt"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+	"text/template"
+
+	"coa/pkg/distro"
+	"coa/pkg/utils"
+
+	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
+)
+
+func DetectAndLoad(isGitHubAction bool) (*Profile, error) {
+	myDistro := distro.NewDistro()
+
+	var baseDir string
+	pathsToTry := []string{
+		filepath.Join("coa", "brain.d"),
+		"/etc/penguins-eggs.d/brain.d",
+	}
+
+	for _, path := range pathsToTry {
+		if _, err := os.Stat(filepath.Join(path, "index.yaml")); err == nil {
+			baseDir = path
+			break
+		}
+	}
+
+	if baseDir == "" {
+		return nil, fmt.Errorf("no brain configuration found in expected paths")
+	}
+
+	indexPath := filepath.Join(baseDir, "index.yaml")
+
+	indexData, err := os.ReadFile(indexPath)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read index %s: %v", indexPath, err)
+	}
+
+	var index BrainIndex
+	if err := yaml.Unmarshal(indexData, &index); err != nil {
+		return nil, fmt.Errorf("syntax error in index.yaml: %v", err)
+	}
+
+	var matchedEntry *DistroMap
+	for i := range index.Distributions {
+		entry := &index.Distributions[i]
+		if strings.EqualFold(entry.ID, myDistro.DistroID) {
+			matchedEntry = entry
+			break
+		}
+		for _, l := range entry.Like {
+			if strings.EqualFold(l, myDistro.DistroID) {
+				matchedEntry = entry
+				break
+			}
+		}
+		if matchedEntry != nil {
+			break
+		}
+	}
+
+	// Automatic fallback: if the specific DistroID is not explicitly listed in index.yaml,
+	// fall back to the family identified by distro.NewDistro() (e.g., "debian", "arch", "fedora")
+	if matchedEntry == nil {
+		targetFamily := strings.ToLower(myDistro.DistroLike)
+		for i := range index.Distributions {
+			entry := &index.Distributions[i]
+			if strings.EqualFold(entry.ID, targetFamily) || strings.EqualFold(entry.ID, myDistro.FamilyID) {
+				matchedEntry = entry
+				break
+			}
+		}
+	}
+
+	if matchedEntry == nil {
+		return nil, fmt.Errorf("no module found for %s (ID: %s)", myDistro.DistroLike, myDistro.DistroID)
+	}
+
+	if matchedEntry.ID == "manjaro" {
+		myDistro.FamilyID = "manjaro"
+	} else if matchedEntry.ID == "arch" {
+		myDistro.FamilyID = "archlinux"
+	} else if matchedEntry.ID == "debian" {
+		myDistro.FamilyID = "debian"
+	}
+
+	basePath := filepath.Join(baseDir, "base.yaml.tmpl")
+
+	var filesToParse []string
+	filesToParse = append(filesToParse, basePath)
+
+	var moduleNameLog string
+	if matchedEntry.Dir != "" {
+		moduleNameLog = matchedEntry.Dir
+		dirPath := filepath.Join(baseDir, "modules", matchedEntry.Dir)
+		var tmplFiles []string
+		err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !d.IsDir() && strings.HasSuffix(path, ".tmpl") {
+				tmplFiles = append(tmplFiles, path)
+			}
+			return nil
+		})
+		if err != nil || len(tmplFiles) == 0 {
+			return nil, fmt.Errorf("no template files found in module directory %s: %v", dirPath, err)
+		}
+		sort.Strings(tmplFiles)
+		filesToParse = append(filesToParse, tmplFiles...)
+	} else if matchedEntry.File != "" {
+		moduleNameLog = matchedEntry.File
+		filesToParse = append(filesToParse, filepath.Join(baseDir, "modules", matchedEntry.File))
+	} else {
+		return nil, fmt.Errorf("no module file or directory specified for %s", myDistro.DistroID)
+	}
+
+	utils.LogNormal("%s[parser]%s Compilazione: base.yaml.tmpl + %s", utils.ColorCyan, utils.ColorReset, moduleNameLog)
+
+	ramModeEnabled := true
+	liveUser := "live"
+	if settings, err := LoadCustomSettings(); err == nil && settings != nil {
+		if settings.Remaster.RamMode != nil {
+			ramModeEnabled = *settings.Remaster.RamMode
+		}
+		if settings.Remaster.User != "" {
+			liveUser = settings.Remaster.User
+		}
+	}
+
+	hasCalamares := false
+	if _, err := exec.LookPath("calamares"); err == nil {
+		hasCalamares = true
+	}
+
+	ctx := TemplateContext{
+		Family:         myDistro.FamilyID,
+		DistroID:       myDistro.DistroID,
+		IsGitHubAction: isGitHubAction,
+		RamModeEnabled: ramModeEnabled,
+		LiveUser:       liveUser,
+		HasCalamares:   hasCalamares,
+	}
+
+	tmpl := template.New(filepath.Base(basePath))
+
+	tmpl.Funcs(template.FuncMap{
+		"indent": func(spaces int, v string) string {
+			pad := strings.Repeat(" ", spaces)
+			return pad + strings.ReplaceAll(v, "\n", "\n"+pad)
+		},
+		"include": func(name string, data interface{}) (string, error) {
+			buf := new(bytes.Buffer)
+			err := tmpl.ExecuteTemplate(buf, name, data)
+			return buf.String(), err
+		},
+	})
+
+	_, err = tmpl.ParseFiles(filesToParse...)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing templates: %v", err)
+	}
+
+	var rendered bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&rendered, "base.yaml.tmpl", ctx); err != nil {
+		return nil, fmt.Errorf("error rendering profile: %v", err)
+	}
+
+	var profile Profile
+	if err := yaml.Unmarshal(rendered.Bytes(), &profile); err != nil {
+		os.WriteFile("/tmp/oa-failed-yaml.txt", rendered.Bytes(), 0644)
+		return nil, fmt.Errorf("YAML syntax error (see /tmp/oa-failed-yaml.txt): %v", err)
+	}
+
+	profile.Settings.Remaster = defaultRemasterConfig()
+	customCfg, err := LoadCustomSettings()
+	if err != nil {
+		return nil, fmt.Errorf("error loading custom.yaml: %v", err)
+	}
+	if customCfg != nil {
+		mergeCustomSettings(&profile.Settings.Remaster, &customCfg.Remaster)
+	}
+
+	return &profile, nil
+}
+
+func defaultRemasterConfig() RemasterConfig {
+	return RemasterConfig{
+		User:      "live",
+		Password:  "evolution",
+		WorkDir:   "/home/eggs",
+		Installer: "krill",
+		Compression: CompressionConfig{
+			Algorithm: "zstd",
+			Level:     3,
+		},
+	}
+}
+
+func mergeCustomSettings(base *RemasterConfig, custom *RemasterConfig) {
+	if custom.User != "" {
+		base.User = custom.User
+	}
+	if custom.Password != "" {
+		base.Password = custom.Password
+	}
+	if custom.WorkDir != "" {
+		base.WorkDir = custom.WorkDir
+	}
+	if custom.Installer != "" {
+		base.Installer = custom.Installer
+	}
+	if custom.Compression.Algorithm != "" {
+		base.Compression.Algorithm = custom.Compression.Algorithm
+	}
+	if custom.Compression.Level > 0 {
+		base.Compression.Level = custom.Compression.Level
+	}
+	if custom.ISOPrefix != "" {
+		base.ISOPrefix = custom.ISOPrefix
+	}
+}
+
+func LoadCustomSettings() (*Settings, error) {
+	v := viper.New()
+	v.SetConfigName("custom")
+	v.AddConfigPath("/etc/penguins-eggs.d/")
+	v.AddConfigPath(".")
+
+	if err := v.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var settings Settings
+	if err := v.Unmarshal(&settings); err != nil {
+		return nil, err
+	}
+	return &settings, nil
+}

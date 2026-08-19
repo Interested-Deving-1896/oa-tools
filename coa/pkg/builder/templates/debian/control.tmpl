@@ -1,0 +1,16 @@
+Package: penguins-eggs
+Version: {{.BaseVersion}}-{{.Rel}}
+Section: admin
+Priority: optional
+Architecture: {{.Arch}}
+Maintainer: Piero Proietti <piero.proietti@gmail.com>
+Depends: {{.Depends}}
+Suggest: cryptsetup-initramfs, calamares, pkexec
+Description: penguins-eggs universal Linux remastering
+ coa is the mind, oa is the arm. This suite provides the
+ necessary tools for Linux system remastering and administration.
+ .
+ Optional components:
+ - cryptsetup-initramfs: for cryped isos (if needed)
+ - calamares: for graphical system installation
+ - pkexec: for privilege elevation (if needed)

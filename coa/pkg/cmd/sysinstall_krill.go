@@ -1,40 +1,66 @@
 package cmd
 
 import (
-	"coa/pkg/krill" // <-- Aggiungi l'import del tuo nuovo pacchetto Krill
+	"coa/pkg/sysinstall/krill"
+	"coa/pkg/sysinstall/setup"
 	"coa/pkg/utils"
 	"os"
 
 	"github.com/spf13/cobra"
 )
 
-// krillSubCmd definisce il sottocomando 'coa sysinstall krill'
+var krillUnattended bool
+var krillFstype string
+
 var krillSubCmd = &cobra.Command{
 	Use:   "krill",
-	Short: "Lancia l'installatore testuale Krill (TUI)",
+	Short: "Launch the Krill text installer (TUI)",
 	Run: func(cmd *cobra.Command, args []string) {
-		// Manteniamo la coerenza dei permessi, installare un sistema richiede root
 		CheckSudoRequirements("sysinstall krill", true)
-
-		runKrillInstaller()
+		if !utils.IsLive() {
+			utils.Fatal("sysinstall krill can only be run on a live system.")
+		}
+		if krillFstype != "" && krillFstype != "ext4" && krillFstype != "btrfs" {
+			utils.Fatal("Invalid fstype: %s. Supported values: ext4, btrfs", krillFstype)
+		}
+		runKrillInstaller(AppVersion, krillUnattended, krillFstype)
 	},
 }
 
-// runKrillInstaller ora avvia il vero motore Bubble Tea.
-func runKrillInstaller() {
-	utils.LogCoala("%s[Krill]%s Avvio dell'installatore TUI in corso...", utils.ColorCyan, utils.ColorReset)
-
-	// Invochiamo la vera interfaccia Go!
-	if err := krill.Run(); err != nil {
-		utils.LogCoala("%s[Krill Errore]%s L'installazione è stata interrotta: %v", utils.ColorRed, utils.ColorReset, err)
+func runKrillInstaller(oaVersion string, unattended bool, fstype string) {
+	if err := setup.BuildInstaller(oaVersion); err != nil {
+		utils.LogError("Installer environment setup error: %v", err)
 		os.Exit(1)
 	}
 
-	utils.LogCoala("%s[Krill]%s Uscita dall'installer.", utils.ColorGreen, utils.ColorReset)
+	if unattended {
+		if err := krill.RunUnattended(fstype); err != nil {
+			utils.LogError("Unattended installation failed: %v", err)
+			os.Exit(1)
+		}
+		utils.LogNormal("%s[Krill]%s Unattended installation completed. Powering off...", utils.ColorGreen, utils.ColorReset)
+		if err := utils.Exec("poweroff"); err != nil {
+			utils.LogError("Poweroff failed: %v", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
+	utils.LogNormal("%s[Krill]%s Starting the TUI installer...", utils.ColorCyan, utils.ColorReset)
+
+	if err := krill.Run(fstype); err != nil {
+		utils.LogNormal("%s[Krill Error]%s Installation was interrupted: %v", utils.ColorRed, utils.ColorReset, err)
+		os.Exit(1)
+	}
+
+	utils.LogNormal("%s[Krill]%s Exiting installer.", utils.ColorGreen, utils.ColorReset)
 	os.Exit(0)
 }
 
 func init() {
-	// Appendiamo il comando a sysinstallCmd
+	sysinstallCmd.PersistentFlags().BoolVar(&krillUnattended, "unattended", false,
+		"non-interactive installation with defaults (WARNING: erases the first disk)")
+	sysinstallCmd.PersistentFlags().StringVar(&krillFstype, "fstype", "",
+		"filesystem type to use (ext4, btrfs)")
 	sysinstallCmd.AddCommand(krillSubCmd)
 }

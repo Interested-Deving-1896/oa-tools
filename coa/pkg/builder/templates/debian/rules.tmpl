@@ -1,0 +1,10 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_install:
+	mkdir -p debian/penguins-eggs/usr/bin
+	mkdir -p debian/penguins-eggs/etc/penguins-eggs.d
+	cp -a usr/bin/* debian/penguins-eggs/usr/bin/
+	cp -a etc/penguins-eggs.d/* debian/penguins-eggs/etc/penguins-eggs.d/

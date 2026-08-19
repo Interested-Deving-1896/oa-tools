@@ -1,0 +1,39 @@
+# ==============================================================================
+# ⛰️ MODULO ALPINE LINUX - REMASTER
+# ==============================================================================
+
+# ----------------------------------------------------------------------------
+# DECLARATIVE CONSTANTS 
+# ----------------------------------------------------------------------------
+{{ define "distro_boot_params" }}modules=loop,squashfs,sd-mod,usb-storage alpinelivelabel=OA_LIVE alpinelivesquashfs=filesystem.squashfs cow_spacesize=2G quiet{{ end }}
+
+# ----------------------------------------------------------------------------
+# 8. INITRAMFS LIVE
+# ----------------------------------------------------------------------------
+{{ define "distro_initramfs_cmd" }}
+CUSTOM_INIT="/tmp/initramfs-penguins-eggs-init"
+/etc/penguins-eggs.d/scripts/oa-alpine-mkinitfs-custom
+#KVER=$(ls -1 /lib/modules/ | head -n 1)
+#mkinitfs -i "$CUSTOM_INIT" -c /etc/mkinitfs/live.conf -o /boot/initramfs-penguins-eggs $KVER
+{{ end }}
+
+# ----------------------------------------------------------------------------
+# 9. COPY KERNEL/INITRD
+# ----------------------------------------------------------------------------
+{{ define "distro_copy_kernel_cmd" }}
+#!/bin/bash
+set -e
+LIVEROOT="/home/eggs/liveroot"
+ISODIR="/home/eggs/isodir"
+FLAVOR="$(uname -r | awk -F- '{print $NF}')"
+cp "$LIVEROOT/boot/vmlinuz-$FLAVOR" "$ISODIR/live/vmlinuz"
+cp "$LIVEROOT/boot/initramfs-penguins-eggs" "$ISODIR/live/initrd.img"
+{{ end }}
+
+# ----------------------------------------------------------------------------
+# 8.1 HARDLINK TO isodir/live/filesystem.squashfs in arch, fedora, manjaro
+# ----------------------------------------------------------------------------
+{{ define "distro_hook_squashfs" -}}
+# alpine: distro_hook_squashfs: no need operations
+"true"
+{{ end -}}

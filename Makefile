@@ -1,52 +1,66 @@
-# 1. THE SINGLE SOURCE OF TRUTH
-VERSION := $(shell git describe --tags --always 2>/dev/null || echo "0.0.0-dev")
+VERSION := $(shell git describe --tags --always 2>/dev/null | sed 's/-g[0-9a-f]*$$//' || echo "0.0.0-dev")
 
-# Directories
-OA_DIR = oa
+# 1. DEFINIAMO IL RUNNER (vuoto di default, si riempirà solo quando lo passiamo da fuori)
+RUNNER ?=
+
+OA_DIR  = oa
 COA_DIR = coa
 
-# Binaries
-OA_BIN = $(OA_DIR)/oa
-COA_BIN = $(COA_DIR)/coa
+OA_BUILD_DIR ?= $(if $(GITHUB_WORKSPACE),$(GITHUB_WORKSPACE)/build,/tmp/oa-build-dir)
+export OA_BUILD_DIR
 
-# Patterns per i pacchetti nativi
+OA_BIN  = $(OA_BUILD_DIR)/oa
+COA_BIN = $(OA_BUILD_DIR)/coa
+
 PACKAGES = *.deb *.rpm *.pkg.tar.zst PKGBUILD
 
-# Target principale
-all: build_oa build_coa
+# -----------------------------------------------------------
+all: build_oa build_coa docs
 	@echo "--------------------------------------"
 	@echo "Hatching completed successfully! 🐣"
 	@echo "Version:           $(VERSION)"
-	@echo "coa Brain (Go):    ./$(COA_BIN)"
-	@echo "oa Workhorse (C):  ./$(OA_BIN)"
+	@echo "coa Brain (Go):    $(COA_BIN)"
+	@echo "oa Workhorse (C):  $(OA_BIN)"
 	@echo "--------------------------------------"
 
-build_oa:
-	@echo "  MAKING oa..."
-	# Passiamo LIBS="-lcrypt" al Makefile interno di oa
+# -----------------------------------------------------------
+# Build
+# -----------------------------------------------------------
+build_oa: | $(OA_BUILD_DIR)
+	@echo "  MAKING oa (C)..."
 	@$(MAKE) -C $(OA_DIR) VERSION="$(VERSION)" LIBS="-lcrypt"
+	@mv $(OA_DIR)/oa $(OA_BIN)
 
-build_coa:
-	@echo "  MAKING coa..."
-	@cd $(COA_DIR) && go build -ldflags "-X 'coa/pkg/cmd.AppVersion=$(VERSION)'" -o coa main.go
+build_coa: | $(OA_BUILD_DIR)
+	@echo "  MAKING coa (Go)..."
+	@cd $(COA_DIR) && go build -ldflags "-X 'coa/pkg/cmd.AppVersion=$(VERSION)'" -o $(COA_BIN) main.go
 
-# Target dedicato: da lanciare solo quando vuoi aggiornare i docs su Git
+$(OA_BUILD_DIR):
+	@mkdir -p $@
+
+# -----------------------------------------------------------
+# Docs & packaging
+# -----------------------------------------------------------
 docs: build_coa
 	@echo "  GENERATING DOCUMENTATION & COMPLETIONS..."
-	@mkdir -p $(COA_DIR)/docs/md $(COA_DIR)/docs/completion
-	@-./$(COA_BIN) _gen_docs --target ./$(COA_DIR)/docs/md
-	@-./$(COA_BIN) completion bash > $(COA_DIR)/docs/completion/coa.bash>/dev/null || true
+	@mkdir -p docs
+	# 2. AGGIUNTO IL RUNNER QUI (se pieno, avvierà qemu, altrimenti non farà nulla)
+	@-$(RUNNER) $(COA_BIN) _gen_docs --target $(OA_BUILD_DIR)/docs
 
+package: all
+	@echo "  PACKAGING NATIVE OS DISTRIBUTION..."
+	# 3. AGGIUNTO IL RUNNER QUI (fondamentale per impacchettare il .deb)
+	@OA_BUILD_DIR=$(OA_BUILD_DIR) OA_PROJ_ROOT=$(PWD) $(RUNNER) $(COA_BIN) tools build
+
+# -----------------------------------------------------------
+# Clean
+# -----------------------------------------------------------
 clean:
-	@echo "  Pulizia binari e piani di volo..."
+	@echo "  Cleaning build artifacts..."
 	@$(MAKE) -C $(OA_DIR) clean || true
-	@rm -f $(COA_BIN)
+	@rm -rf $(OA_BUILD_DIR)
 	@rm -f /tmp/oa-remaster.json /tmp/sysinstall.json /tmp/coa/finalize-plan.json
-	@echo "  Rimozione pacchetti nativi ($(PACKAGES))..."
 	@rm -f $(PACKAGES)
-	@echo "  Pulizia documentazione e completamenti..."
-	@rm -rf $(COA_DIR)/docs/man/*
-	@rm -rf $(COA_DIR)/docs/completion/*
-	@rm -rf $(COA_DIR)/docs/md/*
+	@rm -rf docs/man docs/completion docs/md
 
-.PHONY: all build_oa build_coa clean
+.PHONY: all build_oa build_coa docs package clean
