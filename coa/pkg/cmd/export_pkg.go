@@ -3,10 +3,10 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"coa/pkg/distro"
+	"coa/pkg/utils"
 
 	"github.com/spf13/cobra"
 )
@@ -16,7 +16,7 @@ var exportPkgCmd = &cobra.Command{
 	Short: "Export native packages (.deb, .rpm, .pkg.tar.zst) to Proxmox",
 	Run: func(cmd *cobra.Command, args []string) {
 		CheckSudoRequirements(cmd.Name(), false)
-		handleExportPkg(cleanExport) // Usa la variabile globale di export.go
+		handleExportPkg(cleanExport)
 	},
 }
 
@@ -26,71 +26,68 @@ func init() {
 
 func handleExportPkg(clean bool) {
 	myDistro := distro.NewDistro()
-	distro:= myDistro.DistroID
+	distroID := myDistro.DistroID
 	family := myDistro.FamilyID
 
-	LogCoala("Famiglia rilevata: %s. Ricerca pacchetti pertinenti...", family)
+	utils.LogNormal("Detected family: %s. Searching for relevant packages...", family)
 
 	var pattern string
 	var extension string
 
-	// Filtriamo per estensione in base alla famiglia
 	switch family {
 	case "debian":
-		pattern = "oa-tools*.deb"
+		pattern = "penguins-eggs*.deb"
 		extension = ".deb"
 	case "archlinux":
-		pattern = "oa-tools-arch-*.pkg.tar.zst"
+		pattern = "penguins-eggs-arch-*.pkg.tar.zst"
 		extension = ".pkg.tar.zst"
 	case "fedora":
-		pattern = "oa-tools*.rpm"
+		pattern = "penguins-eggs*.rpm"
 		extension = ".rpm"
 	case "manjaro":
-		pattern = "oa-tools-manjaro-*.pkg.tar.zst"
+		pattern = "penguins-eggs-manjaro-*.pkg.tar.zst"
 		extension = ".pkg.tar.zst"
 	default:
-		LogCoala("Nessuna regola di esportazione specifica per la distro %s della famiglia: %s", distro,family)
-		return
+		utils.Fatal("No specific export rule for distro %s of family: %s", distroID, family)
 	}
 
 	foundFiles, _ := filepath.Glob(pattern)
 	if len(foundFiles) == 0 {
-		LogError("Nessun pacchetto %s trovato per l'esportazione.", extension)
-		return
+		utils.Fatal("No %s package found for export.", extension)
 	}
 
-	// SSH Multiplexing
 	socketPath := "/tmp/coa-ssh-mux-pkg"
-	muxArgs := []string{"-o", "ControlMaster=auto", "-o", "ControlPath=" + socketPath, "-o", "ControlPersist=2m"}
+	muxOpts := fmt.Sprintf("-o ControlMaster=auto -o ControlPath=%s -o ControlPersist=2m", socketPath)
+
 	defer func() {
-		exec.Command("ssh", "-O", "exit", "-o", "ControlPath="+socketPath, remoteUserHost).Run()
+		stopMuxCmd := fmt.Sprintf("ssh -O exit -o ControlPath=%s %s", socketPath, remoteUserHost)
+		utils.ExecQuiet(stopMuxCmd)
 		os.Remove(socketPath)
 	}()
 
 	if clean {
-		LogCoala("Pulizia remota vecchi pacchetti %s...", extension)
+		utils.LogNormal("Remote cleanup of old %s packages...", extension)
 		cleanCmdStr := fmt.Sprintf("rm -f %s%s", remotePkgPath, pattern)
-		sshArgs := append(muxArgs, remoteUserHost, cleanCmdStr)
 
-		if err := exec.Command("ssh", sshArgs...).Run(); err != nil {
-			LogCoala("Pulizia remota non necessaria o fallita (nessun file trovato).")
+		sshCmd := fmt.Sprintf("ssh %s %s '%s'", muxOpts, remoteUserHost, cleanCmdStr)
+
+		if err := utils.ExecQuiet(sshCmd); err != nil {
+			utils.LogNormal("Remote cleanup not needed or failed (no files found).")
 		} else {
-			LogSuccess("Vecchi pacchetti %s rimossi dal server.", extension)
+			utils.LogSuccess("Old %s packages removed from server.", extension)
 		}
 	}
 
 	for _, pkg := range foundFiles {
-		LogCoala("Esportazione: %s", pkg)
+		utils.LogNormal("Exporting: %s", pkg)
 		dstStr := fmt.Sprintf("%s:%s", remoteUserHost, remotePkgPath)
-		scpArgs := append(muxArgs, pkg, dstStr)
 
-		scpCmd := exec.Command("scp", scpArgs...)
-		scpCmd.Stdout, scpCmd.Stderr = os.Stdout, os.Stderr
+		scpCmd := fmt.Sprintf("scp %s '%s' '%s'", muxOpts, pkg, dstStr)
 
-		if err := scpCmd.Run(); err != nil {
-			LogError("Trasferimento fallito per %s: %v", pkg, err)
+		if err := utils.Exec(scpCmd); err != nil {
+			utils.LogError("Transfer failed for %s: %v", pkg, err)
 		} else {
-			LogSuccess("%s inviato con successo.", pkg)
+			utils.LogSuccess("%s sent successfully.", pkg)
 		}
 	}
 }

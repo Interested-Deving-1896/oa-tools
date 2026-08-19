@@ -2,122 +2,66 @@ package builder
 
 import (
 	"coa/pkg/distro"
+	"coa/pkg/utils"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
+	"time"
+
+	sysctx "coa/pkg/context"
 )
 
 func LogBuild(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
-	fmt.Printf("%s[build]%s %s\n", ColorBlue, ColorReset, msg)
+	utils.LogNormal("[build] %s", msg)
 }
 
 func LogError(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
-	fmt.Printf("%s[ERROR]%s %s\n", ColorRed, ColorReset, msg)
+	utils.LogNormal("%s", msg)
 }
 
-// --------------------------------------
-
-var AppVersion string
-
-// HandleBuild coordina la compilazione e delega il packaging ai file specifici
-func HandleBuild(d *distro.Distro, version string) {
-	AppVersion = version
-	baseVer, relNum := parseGitVersion(version)
-	projRoot, oaDir, coaDir := getProjectPaths()
-
-	// Header pulito
-	fmt.Printf("%s====================================================%s\n", ColorCyan, ColorReset)
-	fmt.Printf("%s         COA BUILDER - Native Package Generation      %s\n", ColorCyan, ColorReset)
-	fmt.Printf("%s====================================================%s\n", ColorCyan, ColorReset)
-
-	LogBuild("Building version: %s", AppVersion)
-
-	// 1. Compilazione motore C (Il Braccio)
-	LogBuild("Compiling Engine (oa)...") // Aggiunto log esplicito
-	makeCmd := exec.Command("make", "-C", oaDir, fmt.Sprintf("VERSION=%s", AppVersion), "clean", "all")
-	makeCmd.Stdout, makeCmd.Stderr = os.Stdout, os.Stderr
-	if err := makeCmd.Run(); err != nil {
-		LogError("Engine compilation failed: %v", err)
-		return
-	}
-
-	// 2. Compilazione orchestratore Go (La Mente)
-	LogBuild("Compiling Orchestrator (coa)...") // Aggiunto log esplicito
-	ldflags := fmt.Sprintf("-X 'coa/pkg/cmd.AppVersion=%s'", AppVersion)
-
-	// Puntiamo al binario finale in modo assoluto per sicurezza
-	outputPath := filepath.Join(coaDir, "coa")
-	goCmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", outputPath, "main.go")
-	goCmd.Dir = coaDir
-	goCmd.Stdout, goCmd.Stderr = os.Stdout, os.Stderr
-	if err := goCmd.Run(); err != nil {
-		LogError("Orchestrator compilation failed: %v", err)
-		return
-	}
-
-	// 3. Generazione Documentazione
-	LogBuild("Generating documentation and completions...")
-	if err := generateDocs(coaDir); err != nil {
-		LogError("Docs generation failed: %v", err)
-		return
-	}
-
-	// 4. Routing verso i file specifici con DEBUG
-	LogBuild("Detected Distro Family: %s%s%s", ColorYellow, d.FamilyID, ColorReset)
-
-	switch d.FamilyID {
-	case "archlinux":
-		buildArchPackage(projRoot, baseVer, relNum)
-	case "manjaro":
-		buildManjaroPackage(projRoot, baseVer, relNum)
-	case "fedora", "rhel", "centos", "rocky", "almalinux":
-		// Questo ora DEVE attivarsi se d.FamilyID è fedora
-		buildFedoraPackage(projRoot, oaDir, coaDir, baseVer, relNum)
+func getDebianDepends(arch string) string {
+	base := "btrfs-progs, curl, dosfstools, git, gpg, libarchive-tools, live-boot, live-boot-initramfs-tools, mtools, rsync, squashfs-tools, sudo, xorriso, yq, qemu-guest-agent"
+	switch arch {
+	case "amd64", "i386":
+		return base + ", grub-efi-amd64-bin, grub-pc-bin"
+	case "arm64", "armhf", "armel":
+		return base + ", genimage, grub-efi-arm64-bin"
+	case "riscv64":
+		return base + ", gdisk, genimage"
 	default:
-		LogBuild("Falling back to Debian/Generic packaging...")
-		pkgVersion := fmt.Sprintf("%s-%s", baseVer, relNum)
-		buildDebianPackage(projRoot, oaDir, coaDir, pkgVersion)
+		return base + ", genimage"
 	}
 }
 
-// Utility condivise
+func HandleBuild(d *distro.Distro) {
 
-func parseGitVersion(v string) (string, string) {
-	cleanV := strings.TrimPrefix(v, "v")
-	parts := strings.Split(cleanV, "-")
-	baseVer := parts[0]
-	relNum := "1"
-	if len(parts) > 1 {
-		relNum = parts[1]
+	// 1. Data preparation
+	ctx := sysctx.Detect()
+	baseVer, relNum := getGitVersion()
+	dist := strings.ToLower(d.DistroLike)
+	now := time.Now()
+	arch := getDebianArch()
+	data := RecipeData{
+		BaseVersion: baseVer,
+		Rel:         relNum,
+		Date:        now.Format(time.RFC1123Z),
+		RpmDate:     now.Format("Mon Jan 02 2006"),
+		Arch:        arch,
+		Depends:     getDebianDepends(arch),
 	}
-	return baseVer, relNum
-}
 
-func generateDocs(coaDir string) error {
-	docPath := filepath.Join(coaDir, "docs")
-	genCmd := exec.Command("./coa", "_gen_docs", "--target", docPath)
-	genCmd.Dir = coaDir
-	genCmd.Stdout, genCmd.Stderr = os.Stdout, os.Stderr
-	return genCmd.Run()
-}
+	// 2. staging
+	staging(ctx)
 
-func getProjectPaths() (string, string, string) {
-	cwd, _ := os.Getwd()
-	projRoot := cwd
-	if filepath.Base(cwd) == "coa" {
-		projRoot = filepath.Dir(cwd)
+	// 3. addBuildRecipe
+	recipe(ctx, dist, data)
+
+	// normalize perms: staging/recipe writes are umask-sensitive, packagers aren't
+	if err := normalizePerms(ctx.StageDir); err != nil {
+		utils.LogWarning("normalizePerms: %v", err)
 	}
-	return projRoot, filepath.Join(projRoot, "oa"), filepath.Join(projRoot, "coa")
-}
 
-func copyFile(src, dst string) error {
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(dst, data, 0644)
+	// 4. Packager
+	packager(ctx, dist, data)
 }

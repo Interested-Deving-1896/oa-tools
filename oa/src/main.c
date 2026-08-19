@@ -1,160 +1,193 @@
-#include "oa.h"
-#include <sys/mount.h> 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "cJSON.h"
+#include "logger.h"
 
-// Prototipi
-int oa_mkdir(OA_Context *ctx);
-int oa_bind(OA_Context *ctx);
-int oa_cp(OA_Context *ctx);
-int oa_mount_generic(OA_Context *ctx);
-int oa_umount(OA_Context *ctx);
-int oa_shell(OA_Context *ctx);
-int oa_users(OA_Context *ctx);
+extern int dispatch_task(cJSON *task);
 
-char *read_file(const char *filename) {
-    FILE *f = fopen(filename, "rb");
-    if (!f) {
-        LOG_ERR("IO_ERROR: Impossibile aprire il piano di volo '%s' (errno: %d - %s)", 
-                filename, errno, strerror(errno));
-        return NULL;
-    }
+// ---------------------------------------------------------
+// FUNZIONE UNIVERSALE: Sgancio e Pulizia (Emergenza + Successo)
+// ---------------------------------------------------------
+int perform_safety_teardown(const char *target_dir) {
+    LOG_INFO("☣️  [oa-main] Calling the Hazmat team (Eternit) to secure the are: %s", target_dir);
 
-    fseek(f, 0, SEEK_END);
-    long len = ftell(f);
-    fseek(f, 0, SEEK_SET);
+    cJSON *task = cJSON_CreateObject();
+    cJSON_AddStringToObject(task, "module", "umount"); // La parola d'ordine resta sempre "umount"
+    cJSON_AddStringToObject(task, "work_dir", target_dir);
+    cJSON_AddObjectToObject(task, "params");
 
-    char *data = malloc(len + 1);
-    if (data) {
-        fread(data, 1, len, f);
-        data[len] = '\0';
-    } else {
-        LOG_ERR("MEM_ERROR: Impossibile allocare %ld bytes per il file '%s'", len, filename);
-    }
-    
-    fclose(f);
-    return data;
-}
+    int res = dispatch_task(task);
+    cJSON_Delete(task);
 
-int execute_verb(cJSON *root, cJSON *task) {
-    if (!task) return 1;
-
-    cJSON *action_item = cJSON_GetObjectItemCaseSensitive(task, "action");
-    if (!cJSON_IsString(action_item)) {
-        char *dump = cJSON_PrintUnformatted(task);
-        LOG_ERR("CRASH PARSER: Il task non ha la chiave 'action'! Dump JSON: %s", dump);
-        free(dump);
-        return 1;
-    }
-
-    const char *action_name = action_item->valuestring;
-    OA_Context ctx = { .root = root, .task = task };
-
-    cJSON *description = cJSON_GetObjectItemCaseSensitive(task, "description");
-    if (cJSON_IsString(description)) {
-        printf("%s[coa]%s %s\n", CLR_CYAN, CLR_RESET, description->valuestring);
-        if (oa_log_file) {
-            fprintf(oa_log_file, "[coa] %s\n", description->valuestring);
-            fflush(oa_log_file);
-        }
-    }
-
-    LOG_INFO(">>> Invocazione modulo interno: %s", action_name);
-
-    int res = 1;
-    if (strcmp(action_name, "oa_umount") == 0) {
-        res = oa_umount(&ctx);
-    } else if (strcmp(action_name, "oa_shell") == 0) {
-        res = oa_shell(&ctx);
-    } else if (strcmp(action_name, "shell") == 0) {
-        // Gestione unificata dell'azione ignorata
-        LOG_INFO("Azione 'shell' ignorata dal core C (competenza di Go).");
-        res = 0; 
-    } else if (strcmp(action_name, "oa_users") == 0) {
-        res = oa_users(&ctx);
-    } else if (strcmp(action_name, "oa_mkdir") == 0) {
-        res = oa_mkdir(&ctx);
-    } else if (strcmp(action_name, "oa_bind") == 0) {
-        res = oa_bind(&ctx);
-    } else if (strcmp(action_name, "oa_cp") == 0) {
-        res = oa_cp(&ctx);
-    } else if (strcmp(action_name, "oa_mount_generic") == 0) {
-        res = oa_mount_generic(&ctx);
-    } else {
-        LOG_ERR("Comando sconosciuto: %s", action_name);
-        res = 1;
-    }
-
-    if (res != 0) {
-        LOG_ERR("CRASH INTERNO: Il modulo C '%s' ha restituito errore %d!", action_name, res);
-    }
-    
     return res;
 }
+// ---------------------------------------------------------
+// FUNZIONI ORIGINALI (Lettura I/O)
+// ---------------------------------------------------------
+char* read_stdin() {
+    size_t capacity = 4096;
+    size_t size = 0;
+    char *buffer = malloc(capacity);
+    if (!buffer) return NULL;
 
-void print_help(const char *prog_name) {
-    printf("oa engine v%s - Il motore operativo di coa\n\n", OA_VERSION);
-    printf("USO:\n");
-    printf("  %s <percorso_piano.json>  Esegue il piano di volo specificato\n", prog_name);
-    printf("  %s cleanup                Forza lo smontaggio di emergenza\n", prog_name);
+    int c;
+    while ((c = fgetc(stdin)) != EOF) {
+        if (size + 1 >= capacity) {
+            capacity *= 2;
+            char *new_buffer = realloc(buffer, capacity);
+            if (!new_buffer) {
+                free(buffer);
+                return NULL;
+            }
+            buffer = new_buffer;
+        }
+        buffer[size++] = c;
+    }
+    buffer[size] = '\0';
+    return buffer;
 }
 
-int main(int argc, char *argv[]) {
-    if (argc < 2) {
-        print_help(argv[0]);
-        return 1;
+char* read_file(const char *filename) {
+    FILE *f = fopen(filename, "rb");
+    if (!f) return NULL;
+
+    fseek(f, 0, SEEK_END);
+    long length = ftell(f);
+    if (length < 0) {
+        fclose(f);
+        return NULL;
+    }
+    fseek(f, 0, SEEK_SET);
+
+    char *buffer = malloc((size_t)length + 1);
+    if (buffer) {
+        size_t read_bytes = fread(buffer, 1, (size_t)length, f);
+        buffer[read_bytes] = '\0';
+    }
+    fclose(f);
+    return buffer;
+}
+
+// ---------------------------------------------------------
+// MAIN
+// ---------------------------------------------------------
+int main(int argc, char **argv) {
+    char *json_data = NULL;
+    const char *default_work_dir = "/home/eggs"; // Cartella base di fallback
+
+    if (argc > 1) {
+        if (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-v") == 0) {
+            printf("oa-ng (Next Generation Orchestrator) v1.0\n");
+            return EXIT_SUCCESS;
+        }
+
+        if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0) {
+            printf("Usage:\n");
+            printf("  oa <plan.json>          Runs tasks from a file\n");
+            printf("  cat plan.json | oa      Runs tasks from STDIN\n");
+            printf("  oa cleanup [dir]        Performs a safety umount\n");
+            return EXIT_SUCCESS;
+        }
+
+        // Caso comando manuale: oa cleanup
+        if (strcmp(argv[1], "cleanup") == 0) {
+            const char *target_dir = (argc > 2) ? argv[2] : default_work_dir;
+            printf("🚨 [oa-main] CLEANUP Mode: Run `umount` on %s\n", target_dir);
+            oa_init_log("/var/log/oa-tools.log"); 
+            int res = perform_safety_teardown(target_dir);
+            oa_close_log();
+            return (res == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
+        }
+
+        json_data = read_file(argv[1]);
+        if (!json_data) {
+            fprintf(stderr, "❌ [oa-main] Unable to open the JSON file or unknown command: %s\n", argv[1]);
+            return EXIT_FAILURE;
+        }
+    } else {
+        json_data = read_stdin();
     }
 
-    if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
-        print_help(argv[0]);
-        return 0;
+    if (!json_data || strlen(json_data) == 0) {
+        fprintf(stderr, "❌ [oa-main] No JSON plan received as input.\n");
+        if (json_data) free(json_data);
+        return EXIT_FAILURE;
     }
 
     oa_init_log("/var/log/oa-tools.log");
-    
-    if (strcmp(argv[1], "cleanup") == 0) {
-        LOG_INFO("Comando diretto ricevuto: Esecuzione cleanup...");
-        umount2("/home/eggs/liveroot/dev/pts", MNT_DETACH);
-        umount2("/home/eggs/liveroot/dev", MNT_DETACH);
-        umount2("/home/eggs/liveroot/proc", MNT_DETACH);
-        umount2("/home/eggs/liveroot/sys", MNT_DETACH);
-        umount2("/home/eggs/liveroot/run", MNT_DETACH);
-        umount2("/home/eggs/liveroot", MNT_DETACH);
-        LOG_INFO("Smontaggio di emergenza completato.");
-        oa_close_log();
-        return 0;
-    }
 
-    char *json_data = read_file(argv[1]);
-    if (!json_data) {
-        oa_close_log();
-        return 1; 
-    }
-
-    cJSON *json = cJSON_Parse(json_data);
-    if (!json) {
-        LOG_ERR("JSON_ERROR: Parsing fallito per '%s'.", argv[1]);
+    cJSON *root = cJSON_Parse(json_data);
+    if (!root) {
+        const char *error_ptr = cJSON_GetErrorPtr();
+        LOG_ERR("❌ [oa-main] JSON parsing error: %s", error_ptr ? error_ptr : "unknown");
         free(json_data);
         oa_close_log();
-        return 1;
+        return EXIT_FAILURE;
     }
 
-    cJSON *plan = cJSON_GetObjectItemCaseSensitive(json, "plan");
-    int status = 0;
+    cJSON *plan_array = cJSON_GetObjectItemCaseSensitive(root, "plan");
+    if (!cJSON_IsArray(plan_array)) {
+        LOG_ERR("❌ [oa-main] Invalid JSON format: 'plan' array is missing.");
+        cJSON_Delete(root);
+        free(json_data);
+        oa_close_log();
+        return EXIT_FAILURE;
+    }
 
-    if (cJSON_IsArray(plan)) {
-        cJSON *task;
-        cJSON_ArrayForEach(task, plan) {
-            if ((status = execute_verb(json, task)) != 0) {
-                LOG_ERR("Esecuzione interrotta. Task fallito.");
-                break;
-            }
+    int total_tasks = cJSON_GetArraySize(plan_array);
+    LOG_INFO("🚀 [oa-main] Received schedule with %d tasks. Starting execution.", total_tasks);
+
+    int success_count = 0;
+    int error_count = 0;
+    const char *current_work_dir = default_work_dir; // Traccia la directory di lavoro
+
+    cJSON *task = NULL;
+    cJSON_ArrayForEach(task, plan_array) {
+        cJSON *name_item = cJSON_GetObjectItemCaseSensitive(task, "name");
+        const char *task_name = cJSON_IsString(name_item) ? name_item->valuestring : "Unknown";
+
+        // Aggiorniamo la current_work_dir se questo task la specifica
+        cJSON *work_dir_item = cJSON_GetObjectItemCaseSensitive(task, "work_dir");
+        if (cJSON_IsString(work_dir_item) && work_dir_item->valuestring != NULL) {
+            current_work_dir = work_dir_item->valuestring;
         }
-    } else {
-        status = execute_verb(json, json);
+
+        LOG_INFO("========================================");
+        LOG_INFO("▶ Task Execution: %s", task_name);
+        LOG_INFO("========================================");
+
+        if (dispatch_task(task) == 0) {
+            success_count++;
+        } else {
+            // FRENO DI EMERGENZA!
+            LOG_ERR("🚨 [oa-main] FATAL ERROR: Task '%s' failed. Aborting immediately!", task_name);
+            error_count++;
+            if (perform_safety_teardown(current_work_dir) != 0) {
+                LOG_ERR("❌ [oa-main] Emergency teardown also failed to fully unmount %s.", current_work_dir);
+            }
+            break;
+        }
     }
 
-    cJSON_Delete(json);
+    cJSON_Delete(root);
     free(json_data);
-    LOG_INFO("Esecuzione completata con status: %d", status);
+
+    // ---------------------------------------------------------
+    // GRAND FINALE AND DEFINITIVE TEARDOWN
+    // ---------------------------------------------------------
+    if (error_count > 0) {
+        LOG_ERR("❌ [oa-main] Execution ABORTED due to an error. Successes: %d, Errors: %d", success_count, error_count);
+    } else {
+        LOG_INFO("✨ [oa-main] ISO build completed. Handing over the area to the decontamination team...");
+        if (perform_safety_teardown(current_work_dir) != 0) {
+            LOG_ERR("❌ [oa-main] Final decontamination failed - %s may still have live mounts.", current_work_dir);
+            error_count++;
+        } else {
+            LOG_INFO("🏁 [oa-main] Site successfully dismantled. Successes: %d, Errors: 0", success_count);
+        }
+    }
+
     oa_close_log();
-    return status;
+    return (error_count == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }

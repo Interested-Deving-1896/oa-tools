@@ -1,126 +1,305 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
 
 	"coa/pkg/distro"
-	"coa/pkg/engine"
-	"coa/pkg/pilot"
+	"coa/pkg/parser"
+	"coa/pkg/pathDefaults"
+	"coa/pkg/planner"
 	"coa/pkg/utils"
 
 	"github.com/spf13/cobra"
 )
 
-// --- SISTEMA DI LOGGING CENTRALIZZATO ---
-const (
-	ColorCyan   = "\033[1;36m"
-	ColorRed    = "\033[1;31m"
-	ColorGreen  = "\033[1;32m"
-	ColorYellow = "\033[1;33m" // Aggiunto per i messaggi di debug/breakpoint
-	ColorReset  = "\033[0m"
-)
-
-func LogCoala(format string, a ...interface{}) {
-	msg := fmt.Sprintf(format, a...)
-	fmt.Printf("%s[coa]%s %s\n", ColorCyan, ColorReset, msg)
-}
-
-func LogSuccess(format string, a ...interface{}) {
-	msg := fmt.Sprintf(format, a...)
-	fmt.Printf("%s[coa]%s %s\n", ColorGreen, ColorReset, msg)
-}
-
-func LogError(format string, a ...interface{}) {
-	msg := fmt.Sprintf(format, a...)
-	fmt.Printf("\n%s[ERRORE]%s %s\n", ColorRed, ColorReset, msg)
-}
-
-// ----------------------------------------
-
 var (
-	produceMode string
 	producePath string
-	stopAfter   string // NUOVA VARIABILE: Memorizza il target del breakpoint
+	stopAfter   string
+	debugPlan   bool
+	cloneFlag   bool
+	cryptedFlag bool
+	fdtFlag     string
 )
 
 var remasterCmd = &cobra.Command{
 	Use:   "remaster",
-	Short: "Start a system remastering flight (ISO production)",
+	Short: "Start a system remastering (ISO production)",
 	Long: `The 'remaster' command orchestrates the creation of a bootable live ISO. 
 It uses the new Coala architecture to read the agnostic Brain profile 
-and generate a precise execution plan for the OA engine.`,
-	Example: `  # Start a standard ISO remastering
-  sudo ./coa remaster --mode standard
-  
+and generate a precise execution plan for the OA planner.`,
+	Example: `  # Standard ISO remastering
+  sudo ./coa remaster
+
+  # Clone mode (preserves users and /home)
+  sudo ./coa remaster --clone
+
+  # Crypted mode (LUKS-encrypted squashfs)
+  sudo ./coa remaster --crypted
+
   # Debug mode: stop after a specific step
-  sudo ./coa remaster --stop-after coa-initrd`,
+  sudo ./coa remaster --stop-after coa-initrd
+
+  # Print the generated JSON plan and exit
+  sudo ./coa remaster --debug`,
 	Run: func(cmd *cobra.Command, args []string) {
-		CheckSudoRequirements(cmd.Name(), true)
+		CheckSudoRequirements(cmd.Name(), !debugPlan)
 
-		LogCoala("Avvio procedura di rimasterizzazione...")
+		if cloneFlag && cryptedFlag {
+			utils.Fatal("The --clone and --crypted flags are mutually exclusive.")
+		}
 
-		// 1. Identità: Chi siamo?
+		produceMode := "standard"
+		if cloneFlag {
+			produceMode = "clone"
+		} else if cryptedFlag {
+			produceMode = "crypted"
+		}
+
+		// Check if Calamares is configured as the preferred installer but is not installed
+		if customCfg, err := parser.LoadCustomSettings(); err == nil && customCfg != nil {
+			if customCfg.Remaster.Installer == "calamares" {
+				if _, err := exec.LookPath("calamares"); err != nil {
+					utils.Fatal("Calamares is configured as the installer in custom.yaml, but the 'calamares' package is not installed on this system.")
+				}
+			}
+		}
+
+		startTime := time.Now()
+
+		utils.LogNormal("Starting remastering procedure (mode: %s)...", produceMode)
+
 		myDistro := distro.NewDistro()
-		isoName := myDistro.GetISOName()
-		finalPath := filepath.Join(producePath, isoName)
-		LogCoala("L'uovo verrà generato in: %s", finalPath)
 
-		// 2. PILOT: Carichiamo lo spartito dal Brain
-		profile, err := pilot.DetectAndLoad()
-		if err != nil {
-			LogError("Impossibile caricare il Brain Profile: %v", err)
-			os.Exit(1)
-		}
-		LogSuccess("Spartito caricato con successo.")
-
-		// 3. ENGINE: Generiamo il piano JSON per oa
-		// NOTA: Passiamo stopAfter come 5° parametro al motore!
-		planPath, err := engine.GeneratePlan(profile.Remaster, myDistro.FamilyID, true, producePath, finalPath, stopAfter)
-		// planPath, err := engine.GeneratePlan(profile.Remaster, myDistro.FamilyID, true, producePath, stopAfter)
-		if err != nil {
-			LogError("Impossibile generare il piano di volo: %v", err)
-			os.Exit(1)
+		if produceMode == "crypted" && myDistro.FamilyID != "debian" {
+			utils.Fatal("The --crypted option is only available for the Debian family (detected: %s).", myDistro.DistroLike)
 		}
 
-		// RECUPERO BOOTLOADERS
-		LogCoala("Recupero bootloaders (penguins-bootloaders)...")
-		utils.EnsureBootloaders("/tmp/coa/bootloaders")
+		var luksPassphrase string
+		if produceMode == "crypted" {
+			// Check dipendenze
+			if err := checkCryptDependencies(); err != nil {
+				fmt.Println(err) // Stampa il messaggio
+				os.Exit(1)       // Esce con codice 1
+			}
 
-		// GENERAZIONE EXCLUSIONI
-		LogCoala("Generazione lista di esclusione (%s mode)...", produceMode)
-		engine.GenerateExcludeList(produceMode)
+			if err := os.MkdirAll(pathDefaults.StagingDir, 0755); err != nil {
+				utils.Fatal("Unable to create %s: %v", pathDefaults.StagingDir, err)
+			}
 
-		// 4. DECOLLO: Eseguiamo il motore C (oa) passandogli il JSON appena generato
-		LogCoala("Passaggio dei comandi al motore OA...")
-		oaCmd := exec.Command("oa", planPath)
+			var err error
+			cryptoCfg := promptCryptoConfig()
+			if err := saveCryptoConfig(cryptoCfg); err != nil {
+				utils.Fatal("Unable to save crypto configuration: %v", err)
+			}
+			utils.LogSuccess("Crypto configuration saved.")
 
-		// Colleghiamo l'output di oa direttamente al terminale dell'utente
+			luksPassphrase, err = promptLuksPassword()
+			if err != nil {
+				utils.Fatal("LUKS passphrase error: %v", err)
+			}
+			utils.LogSuccess("LUKS passphrase acquired (will not be written to disk).")
+		}
+
+		isGitHubAction := false
+		if _, err := os.Stat("/home/runner/work"); !os.IsNotExist(err) {
+			isGitHubAction = true
+		}
+
+		var fdtDir, fdtFile string
+
+		if fdtFlag != "" && fdtFlag != "none" {
+			fi, err := os.Stat(fdtFlag)
+			if err != nil {
+				utils.Fatal("FDT path %s not found: %v", fdtFlag, err)
+			}
+			if fi.IsDir() {
+				fdtDir = fdtFlag
+				fdtFile = "k1-x_MUSE-Book.dtb" // legacy fallback
+			} else {
+				fdtDir = filepath.Dir(fdtFlag)
+				fdtFile = filepath.Base(fdtFlag)
+			}
+			fdtDir = strings.TrimSuffix(fdtDir, "/")
+		}
+
+		isoName := myDistro.GetISOName(produceMode)
+		if fdtDir != "" {
+			if strings.HasSuffix(isoName, ".iso") {
+				isoName = strings.TrimSuffix(isoName, ".iso") + ".img"
+			}
+		}
+
+		if customCfg, err := parser.LoadCustomSettings(); err == nil && customCfg != nil && customCfg.Remaster.ISOPrefix != "" {
+			ext := ".iso"
+			if runtime.GOARCH == "riscv64" || fdtDir != "" {
+				ext = ".img"
+			}
+			isoName = fmt.Sprintf("%s-%s%s", customCfg.Remaster.ISOPrefix, time.Now().Format("2006-01-02_1504"), ext)
+		}
+
+		finalIsoPath := filepath.Join(producePath, isoName)
+		if strings.HasSuffix(finalIsoPath, ".img") {
+			utils.LogNormal("Image will be generated at: %s", finalIsoPath)
+		} else {
+			utils.LogNormal("ISO will be generated at: %s", finalIsoPath)
+		}
+
+		profile, err := parser.DetectAndLoad(isGitHubAction)
+		if err != nil {
+			utils.Fatal("Unable to load Brain Profile: %v", err)
+		}
+		utils.LogSuccess("Profile loaded successfully.")
+
+		utils.LogNormal("Fetching bootloaders (penguins-bootloaders)...")
+		if err := utils.EnsureBootloaders(pathDefaults.BootloadersDir); err != nil {
+			utils.Fatal("Failed to ensure bootloaders: %v", err)
+		}
+
+		utils.LogNormal("Generating exclude list (%s mode)...", produceMode)
+		excludeListPath := planner.GenerateExcludeList(produceMode, isGitHubAction)
+
+		compression := "zstd"
+		if profile.Settings.Remaster.Compression.Algorithm != "" {
+			compression = profile.Settings.Remaster.Compression.Algorithm
+		}
+
+		if !isGitHubAction {
+			utils.LogNormal("Checking available disk space...")
+			snapshotDir := filepath.Dir(finalIsoPath)
+			report, err := planner.CheckDiskSpace(producePath, snapshotDir, compression, excludeListPath)
+			if err != nil {
+				utils.LogWarning("Could not verify disk space: %v", err)
+			} else {
+				utils.LogNormal("Space estimate:\n%s", report.String())
+				needed := report.NeededKiB()
+				if report.FreeSnapshotKiB < report.CompressedKiB {
+					utils.Fatal("Not enough space on %s: need %.1f GiB, have %.1f GiB.",
+						snapshotDir,
+						float64(report.CompressedKiB)/1024.0/1024.0,
+						float64(report.FreeSnapshotKiB)/1024.0/1024.0)
+				}
+				if report.SamePartition && report.FreeSnapshotKiB < needed {
+					utils.Fatal("Work dir and ISO on same partition: need %.1f GiB (2x ISO), have %.1f GiB on %s.",
+						float64(needed)/1024.0/1024.0,
+						float64(report.FreeSnapshotKiB)/1024.0/1024.0,
+						snapshotDir)
+				}
+				if !report.SamePartition && report.FreeWorkKiB < report.CompressedKiB {
+					utils.Fatal("Not enough space on work dir %s: need %.1f GiB, have %.1f GiB.",
+						producePath,
+						float64(report.CompressedKiB)/1024.0/1024.0,
+						float64(report.FreeWorkKiB)/1024.0/1024.0)
+				}
+				utils.LogSuccess("Disk space check passed.")
+			}
+		}
+
+		planPath, planJSON, err := planner.GeneratePlan(
+			profile,
+			myDistro.FamilyID,
+			isGitHubAction,
+			true,
+			producePath,
+			finalIsoPath,
+			stopAfter,
+			debugPlan,
+			produceMode,
+			luksPassphrase,
+			fdtDir,
+			fdtFile,
+		)
+		if err != nil {
+			utils.Fatal("Unable to generate the flight plan: %v", err)
+		}
+
+		utils.LogNormal("Handing off to the OA engine...")
+
+		var oaCmd *exec.Cmd
+		if produceMode == "crypted" {
+			oaCmd = exec.Command("oa")
+			oaCmd.Stdin = bytes.NewReader(planJSON)
+		} else {
+			oaCmd = exec.Command("oa", planPath)
+		}
+
 		oaCmd.Stdout = os.Stdout
 		oaCmd.Stderr = os.Stderr
 
 		if err := oaCmd.Run(); err != nil {
-			LogError("L'esecuzione di oa è fallita: %v", err)
-			os.Exit(1)
+			utils.Fatal("OA engine execution failed: %v", err)
 		}
 
-		// Vittoria finale: Differenziamo il messaggio se abbiamo usato il breakpoint
 		if stopAfter != "" {
-			fmt.Printf("\n%s[DEBUG]%s Breakpoint raggiunto e ambiente smontato in sicurezza. Pronto per l'ispezione! 🐧🔍\n", ColorYellow, ColorReset)
+			utils.LogWarning("Breakpoint reached and environment safely unmounted. Ready for inspection!")
 		} else {
-			fmt.Printf("\n%s[SUCCESSO]%s Rimasterizzazione completata! L'uovo è pronto. 🐧🥚\n", ColorGreen, ColorReset)
+			elapsed := time.Since(startTime)
+			h := int(elapsed.Hours())
+			m := int(elapsed.Minutes()) % 60
+			s := int(elapsed.Seconds()) % 60
+
+			if info, err := os.Stat(finalIsoPath); err == nil {
+				sizeBytes := info.Size()
+				sizeGiB := float64(sizeBytes) / 1024.0 / 1024.0 / 1024.0
+				fileType := "ISO"
+				if strings.HasSuffix(finalIsoPath, ".img") {
+					fileType = "Image"
+				}
+				if sizeGiB >= 1.0 {
+					utils.LogSuccess("%s: %.2f GiB in %02d:%02d:%02d — the egg is ready!", fileType, sizeGiB, h, m, s)
+				} else {
+					sizeMiB := float64(sizeBytes) / 1024.0 / 1024.0
+					utils.LogSuccess("%s: %.1f MiB in %02d:%02d:%02d — the egg is ready!", fileType, sizeMiB, h, m, s)
+				}
+			} else {
+				utils.LogSuccess("Remastering completed in %02d:%02d:%02d — the egg is ready!", h, m, s)
+			}
 		}
 	},
 }
 
-func init() {
-	remasterCmd.Flags().StringVar(&produceMode, "mode", "standard", "standard, clone, or crypted")
-	remasterCmd.Flags().StringVar(&producePath, "path", "/home/eggs", "working directory")
+var produceCmd = &cobra.Command{
+	Use:   "produce",
+	Short: "Alias for remaster (penguins-eggs compatibility)",
+	Run:   remasterCmd.Run,
+}
 
-	// Registrazione del nuovo flag per il breakpoint
-	remasterCmd.Flags().StringVar(&stopAfter, "stop-after", "", "Ferma l'esecuzione dopo uno step specifico (es. coa-initrd)")
+func checkCryptDependencies() error {
+	cmd := exec.Command("dpkg", "-s", "cryptsetup-initramfs")
+	if err := cmd.Run(); err != nil {
+		// Controlla se il pacchetto esiste nel database (anche se non configurato)
+		checkCmd := exec.Command("dpkg-query", "-f", "${db:Status-Status}", "-W", "cryptsetup-initramfs")
+		out, _ := checkCmd.Output()
+		if string(out) != "installed" {
+			return fmt.Errorf("encryption requires 'cryptsetup-initramfs'. Please install it using: sudo apt install cryptsetup-initramfs")
+		}
+		// Se è "installed" ma dpkg -s fallisce, forse è un problema temporaneo
+		return fmt.Errorf("cryptsetup-initramfs is installed but not properly configured")
+	}
+	return nil
+}
+
+func init() {
+	remasterCmd.Flags().StringVar(&producePath, "path", pathDefaults.DefaultWorkPath, "working directory")
+	remasterCmd.Flags().BoolVar(&cloneFlag, "clone", false, "Clone the system preserving users and /home")
+	remasterCmd.Flags().BoolVar(&cryptedFlag, "crypted", false, "Create an ISO with LUKS-encrypted filesystem.squashfs")
+	remasterCmd.Flags().StringVar(&stopAfter, "stop-after", "", "Stop execution after a specific step (e.g. coa-initrd)")
+	remasterCmd.Flags().BoolVar(&debugPlan, "debug", false, "Print the JSON plan and exit without remastering")
+	remasterCmd.Flags().StringVar(&fdtFlag, "fdt", "", "path to Flattened Device Tree (DTB) file or directory")
+
+	produceCmd.Flags().StringVar(&producePath, "path", pathDefaults.DefaultWorkPath, "working directory")
+	produceCmd.Flags().BoolVar(&cloneFlag, "clone", false, "Clone the system preserving users and /home")
+	produceCmd.Flags().BoolVar(&cryptedFlag, "crypted", false, "Create an ISO with LUKS-encrypted filesystem.squashfs")
+	produceCmd.Flags().StringVar(&stopAfter, "stop-after", "", "Stop execution after a specific step (e.g. coa-initrd)")
+	produceCmd.Flags().BoolVar(&debugPlan, "debug", false, "Print the JSON plan and exit without remastering")
+	produceCmd.Flags().StringVar(&fdtFlag, "fdt", "", "path to Flattened Device Tree (DTB) file or directory")
 
 	rootCmd.AddCommand(remasterCmd)
+	rootCmd.AddCommand(produceCmd)
 }

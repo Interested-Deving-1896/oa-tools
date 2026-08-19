@@ -1,0 +1,75 @@
+Name:           penguins-eggs
+Version:        {{.BaseVersion}}
+Release:        {{.Rel}}%{?dist}
+Summary:        penguins-eggs universal Linux remastering
+License:        GPLv3
+URL:            https://penguins-eggs.net
+
+# Dipendenze originali + livecd-tools per la creazione delle ISO
+Requires:       bash-completion
+Requires:       curl
+Requires:       dosfstools
+Requires:       dracut-live
+Requires:       efibootmgr
+Requires:       gdisk
+Requires:       git
+Requires:       gnupg2
+Requires:       google-noto-emoji-fonts
+Requires:       grub2-efi-x64-modules
+Requires:       grub2-pc-modules
+Requires:       libarchive
+Requires:       livecd-tools
+Requires:       mtools
+Requires:       rsync
+Requires:       shim-x64
+Requires:       squashfs-tools
+Requires:       sudo
+Requires:       xorriso
+Requires:       yq
+Requires:       qemu-guest-agent
+
+# Gestione della transizione: diciamo a DNF di sostituire oa-tools
+Conflicts:      oa-tools
+Obsoletes:      oa-tools
+
+# Disabilitiamo l'estrazione di debug automatica di RPM 
+# (spesso corrompe i binari Go se non configurata a dovere)
+%define debug_package %{nil}
+%define __os_install_post %{nil}
+
+%description
+penguins-eggs: universal Linux remastering suite.
+coa is the mind, oa is the arm. This suite provides the
+necessary tools for Linux system remastering and administration.
+
+%prep
+# Nessun sorgente da estrarre (saltiamo)
+
+%build
+# Niente da compilare, ci ha già pensato Go (saltiamo)
+
+%install
+# Tracciamo i confini nella "buildroot" temporanea di RPM
+mkdir -p %{buildroot}/usr
+mkdir -p %{buildroot}/etc
+chmod 0755 %{buildroot}/usr %{buildroot}/etc
+
+# Copiamo i file dal nostro staging (che gli passeremo via riga di comando come _stagedir)
+cp -a %{_stagedir}/usr/* %{buildroot}/usr/
+cp -a %{_stagedir}/etc/* %{buildroot}/etc/
+
+%files
+# Qui dichiariamo la proprietà esatta dei file
+/usr/bin/oa
+/usr/bin/coa
+/usr/bin/eggs
+/etc/penguins-eggs.d/
+/usr/share/man/man1/*
+/usr/share/penguins-eggs/
+/usr/share/bash-completion/completions/*
+/usr/share/fish/vendor_completions.d/*
+/usr/share/zsh/vendor-completions/*
+
+%changelog
+* {{.RpmDate}} Piero Proietti <piero.proietti@gmail.com> - {{.BaseVersion}}-{{.Rel}}
+- Automated build via penguins-eggs builder

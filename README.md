@@ -1,143 +1,77 @@
-[update-readmes]   Mode: rewrite — migrating to template structure...
-# oa-tools
+See AI context: https://penguins-eggs.net/llms.txt
 
-[![Built with Ona](https://ona.com/build-with-ona.svg)](https://app.ona.com/#https://github.com/Interested-Deving-1896/oa-tools) [![KDE Eco](https://img.shields.io/badge/KDE%20Eco-certified-brightgreen?logo=kde&logoColor=white&style=flat-square)](https://eco.kde.org/) [![Blue Angel](https://img.shields.io/badge/Blue%20Angel-DE--UZ%20215-0055a4?style=flat-square)](https://www.blauer-engel.de/en/certification/criteria) [![Energy](https://api.green-coding.io/v1/ci/badge/get?repo=Interested-Deving-1896%2Foa-tools&branch=main&workflow=eco-audit.yml)](https://metrics.green-coding.io/ci-index.html)
+### 🥚 penguins-eggs
+After years of passionate work on the TypeScript **penguins-eggs**, its next evolution is here: the C/Go rewrite now carries the `penguins-eggs` name. The old TypeScript version lives on as [penguins-eggs-legacy](https://github.com/pieroproietti/penguins-eggs-legacy).
+penguins-eggs is built on **oa**, a high-performance C-native remastering engine, and **coa**, its intelligent Go orchestrator. This new architecture replaces fragile bash scripts with native Linux kernel syscalls and strict zero-copy principles — delivering a significant leap in speed and reliability.
+The goal is ambitious: a truly universal approach to Linux remastering. Every distribution is different, yet they all share common roots. penguins-eggs already supports Alpine, Arch, Debian, Fedora, Manjaro and openSUSE — and aims to prove that a single, unified engine can handle them all.
 
+[![donate](https://img.shields.io/badge/Donate-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/penguinseggs)
+---
 
-<!-- AI:start:what-it-does -->
-This project provides tools for remastering and customizing operating systems across different Linux distributions. It aims to explore a universal approach to system remastering by leveraging shared foundations while accommodating distribution-specific differences. It is used by developers and system administrators working on OS customization and automation tasks.
-<!-- AI:end:what-it-does -->
+## 🏗 penguins-eggs
 
-## Architecture
+We have transitioned to a monorepo structure to ensure perfect synchronization between the workhorse (oa) and the orchestrator (coa).
 
-<!-- AI:start:architecture -->
-The project is structured into two main components: `oa` and `coa`. The `oa` component, written in C, serves as the workhorse for system remastering tasks, while `coa`, written in Go, acts as the orchestration layer or "brain." The `Makefile` is the central build system, defining targets for building, cleaning, and generating documentation. The repository also includes workflows for CI/CD and automation tasks.
+### 🧠 [coa](./DOCS/3-developer-manual/architecture/1-overview.md) (**brooding in my dialect**) - The Mind
+It manages the full lifecycle: from laying the ISO to the final installation and AI agent orchestration (via MCP). It powers the primary **`eggs`** CLI command.
 
-The directory structure is as follows:
+The name derives from the dialect word coa, referring to the act of brooding or incubating eggs until they are ready to hatch. During early development, the repo was named `oa-tools` with binaries `coa` and `oa`, but `eggs` is the primary CLI executable used by developers and users.
 
-```plaintext
-.
-├── .github/               # GitHub workflows and configurations
-├── coa/                   # Source code and resources for the 'coa' component
-│   ├── docs/              # Documentation and shell completions
-│   ├── main.go            # Entry point for the 'coa' binary
-│   └── pkg/               # Go packages for 'coa'
-├── oa/                    # Source code for the 'oa' component
-├── scripts/               # Utility scripts
-├── tests/                 # Test cases and related resources
-├── Makefile               # Build and automation tasks
-├── README.md              # Project documentation
-├── LICENSE                # License information
-└── other files            # Additional configuration and documentation files
-```
+**Language: Go**
 
-The `Makefile` defines `build_oa` and `build_coa` targets to compile the respective components. The `docs` target generates documentation and shell completions for `coa`. The `clean` target removes build artifacts, native packages, and documentation.
-<!-- AI:end:architecture -->
+For `eggs` commands, see [eggs Command Reference](./DOCS/2-user-manual/2-commands.md).
 
-## Install
+### 🦾 [oa](./DOCS/3-developer-manual/architecture/3-oa.md) (**eggs in my dialect**) - The Workhorse
+**Language: C**
+`oa` is the low-level engine. It handles the "heavy lifting" of the system:
+- Managing OverlayFS and mount points.
+- Executing SquashFS compression.
+- Remove and create users and groups via yocto_style functions.
+- Interacting directly with the Linux Kernel and system binaries.
+- **Philosophy:** Performance, stability, and zero-dependency execution.
 
-<!-- Add installation instructions here. This section is yours — the AI will not modify it. -->
+## 🚀 Getting Started
 
+> The primary CLI command is **`eggs`** (e.g. `eggs remaster`, `eggs produce`, `eggs sysinstall`, `eggs destroy`, `eggs mcp`). The binary is available as both `eggs` and `coa`. See the [Quick Start](./DOCS/2-user-manual/1-quickstart.md) for the full command usage.
+
+### Prerequisites
+- A Linux system (Debian-based, Arch-based, Fedora-based or Manjaro-based).
+- `gcc` and `make` (for `oa`).
+- `golang` 1.25+ (for `coa`).
+
+### Build Everything
+From this root directory, simply run:
 ```bash
-git clone https://github.com/Interested-Deving-1896/oa-tools.git
-cd oa-tools
+make
 ```
 
-## Usage
+This will compile both binaries:
+- `./oa/oa` (The Engine)
+- `./coa/coa` (The Orchestrator)
 
-<!-- Add usage examples here. This section is yours — the AI will not modify it. -->
+> TIP: Actually you can get native packages, simply using `make clean package`
 
-## Configuration
+---
 
-<!-- Document configuration options here. This section is yours — the AI will not modify it. -->
+## 📜 Philosophy
+The **penguins-eggs** project aims to provide a "Passepartout" for Linux remastering. By separating the **Mind** (Go) from the **Workhorse** (C), we achieve a clean, maintainable, and incredibly fast workflow that can adapt to any distribution without changing the user experience.
 
-## CI
+Documentation can be found on [DOCS](./DOCS/README.md). See also the [Manifestum](./DOCS/1-philosophy/1-manifestum.md) for the founding vision and origins.
 
-<!-- AI:start:ci -->
-The repository uses GitHub Actions for continuous integration and automation. Below are the workflows and their purposes:
+The article [eggs-bananas](https://penguins-eggs.net/blog/eggs-bananas) philosophy can be read on my blog.
 
-- **add-mirror-repo.yml**: Adds a new mirror repository to the system.
-  *No secrets required.*
-
-- **ci-2001.yml - ci-2012.yml**: Run various CI tests for different configurations and environments.
-  *No secrets required.*
-
-- **cleanup-pollution.yml**: Cleans up temporary files and artifacts from previous runs.
-  *No secrets required.*
-
-- **mirror-orgs-full.yml**: Mirrors all repositories within an organization.
-  *Requires `GITHUB_TOKEN`.*
-
-- **mirror-osp-to-gitlab.yml**: Mirrors open-source projects to GitLab.
-  *Requires `GITLAB_TOKEN`.*
-
-- **neon-build-ci.yml**: Builds and tests the Neon project.
-  *No secrets required.*
-
-- **sync-forks.yml**: Synchronizes forks with their upstream repositories.
-  *No secrets required.*
-
-- **rotate-token.yml**: Rotates API tokens for security purposes.
-  *Requires `API_TOKEN`.*
-
-- **trigger-artifact-mirror.yml**: Triggers artifact mirroring workflows.
-  *No secrets required.*
-
-Refer to individual workflow files in `.github/workflows/` for detailed configurations.
-<!-- AI:end:ci -->
-
-## Mirror chain
-
-<!-- AI:start:mirror-chain -->
-This repo is maintained in [`Interested-Deving-1896/oa-tools`](https://github.com/Interested-Deving-1896/oa-tools) and mirrored through:
-
-```
-Interested-Deving-1896/oa-tools  ──►  OpenOS-Project-OSP/oa-tools  ──►  OpenOS-Project-Ecosystem-OOC/oa-tools
-```
-
-Changes flow downstream automatically via the hourly mirror chain in
-[`fork-sync-all`](https://github.com/Interested-Deving-1896/fork-sync-all).
-Direct commits to OSP or OOC are detected and opened as PRs back to `Interested-Deving-1896`.
-<!-- AI:end:mirror-chain -->
-
-## Contributors
-
-<!-- AI:start:contributors -->
-[@pieroproietti](https://github.com/pieroproietti): 375 commits
-[@Interested-Deving-1896](https://github.com/Interested-Deving-1896): 208 commits
-[@gnuhub](https://github.com/gnuhub): 36 commits
-
-*Note: This repository may be a mirror. Please check the upstream source for additional context.*
-<!-- AI:end:contributors -->
-
-## Origins
-
-<!-- AI:start:origins -->
-_Original project — no upstream influences recorded._
-<!-- AI:end:origins -->
-
-## Resources
-
-<!-- AI:start:resources -->
-_No additional resource files found._
-<!-- AI:end:resources -->
-
-<!-- AI:start:accessibility -->
-This repo uses automated accessibility auditing via `check-accessibility.yml`.
-
-Checks include: CODEOWNERS ownership coverage, README screen-reader compatibility,
-WCAG 2.1 AA HTML compliance, audio overview (espeak-ng), and Braille output (liblouis).
+[![coaoa](./coaoa.jpeg "Visit the Penguins' eggs Telegram channel")](https://t.me/penguins_eggs)
 
 
+## Star History
 
+This project collects stars, look to the sky... contribute!
 
-Run the [Check Accessibility](https://github.com/Interested-Deving-1896/oa-tools/actions/workflows/check-accessibility.yml)
-workflow to generate the first report and accessibility artifacts.
-See [DOCS/accessibility.md](https://github.com/Interested-Deving-1896/oa-tools/blob/main/DOCS/accessibility.md) for the full reference.
-<!-- AI:end:accessibility -->
+[![Star History Chart](https://api.star-history.com/svg?repos=pieroproietti/penguins-eggs&type=Date)](https://star-history.com/#pieroproietti/penguins-eggs&Date)
 
-## License
+---
+*Created with passion by Piero Proietti.*
 
-<!-- AI:start:license -->
-[MIT](https://github.com/Interested-Deving-1896/oa-tools/blob/main/LICENSE) © 2026 [Interested-Deving-1896](https://github.com/Interested-Deving-1896)
-<!-- AI:end:license -->
+### blog
+* [https://penguins-eggs.net](https://penguins-eggs.net)
+
