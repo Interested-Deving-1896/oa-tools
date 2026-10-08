@@ -104,11 +104,11 @@ Direct commits to OSP or OOC are detected and opened as PRs back to `Interested-
 ## Contributors
 
 <!-- AI:start:contributors -->
-[@pieroproietti](https://github.com/pieroproietti): 375 commits
-[@Interested-Deving-1896](https://github.com/Interested-Deving-1896): 208 commits
-[@gnuhub](https://github.com/gnuhub): 36 commits
-
-*Note: This repository may be a mirror. Please check the upstream source for additional context.*
+| Contributor | Commits |
+|---|---|
+| [@pieroproietti](https://github.com/pieroproietti) | 375 |
+| [@Interested-Deving-1896](https://github.com/Interested-Deving-1896) | 332 |
+| [@gnuhub](https://github.com/gnuhub) | 36 |
 <!-- AI:end:contributors -->
 
 ## Origins
