@@ -1,4 +1,4 @@
-[update-readmes] Mode: rewrite — migrating to template structure...
+[update-readmes]   Mode: rewrite — migrating to template structure...
 # oa-tools
 
  [![KDE Eco](https://img.shields.io/badge/KDE%20Eco-certified-brightgreen?logo=kde&logoColor=white&style=flat-square)](https://eco.kde.org/) [![Blue Angel](https://img.shields.io/badge/Blue%20Angel-DE--UZ%20215-0055a4?style=flat-square)](https://www.blauer-engel.de/en/certification/criteria)
@@ -18,18 +18,18 @@ The directory structure is as follows:
 
 ```plaintext
 .
-├── .github/ # GitHub workflows and configurations
-├── coa/ # Source code and resources for the 'coa' component
-│ ├── docs/ # Documentation and shell completions
-│ ├── main.go # Entry point for the 'coa' binary
-│ └── pkg/ # Go packages for 'coa'
-├── oa/ # Source code for the 'oa' component
-├── scripts/ # Utility scripts
-├── tests/ # Test cases and related resources
-├── Makefile # Build and automation tasks
-├── README.md # Project documentation
-├── LICENSE # License information
-└── other files # Additional configuration and documentation files
+├── .github/               # GitHub workflows and configurations
+├── coa/                   # Source code and resources for the 'coa' component
+│   ├── docs/              # Documentation and shell completions
+│   ├── main.go            # Entry point for the 'coa' binary
+│   └── pkg/               # Go packages for 'coa'
+├── oa/                    # Source code for the 'oa' component
+├── scripts/               # Utility scripts
+├── tests/                 # Test cases and related resources
+├── Makefile               # Build and automation tasks
+├── README.md              # Project documentation
+├── LICENSE                # License information
+└── other files            # Additional configuration and documentation files
 ```
 
 The `Makefile` defines `build_oa` and `build_coa` targets to compile the respective components. The `docs` target generates documentation and shell completions for `coa`. The `clean` target removes build artifacts, native packages, and documentation.
@@ -58,31 +58,31 @@ cd oa-tools
 The repository uses GitHub Actions for continuous integration and automation. Below are the workflows and their purposes:
 
 - **add-mirror-repo.yml**: Adds a new mirror repository to the system.
- *No secrets required.*
+  *No secrets required.*
 
 - **ci-2001.yml - ci-2012.yml**: Run various CI tests for different configurations and environments.
- *No secrets required.*
+  *No secrets required.*
 
 - **cleanup-pollution.yml**: Cleans up temporary files and artifacts from previous runs.
- *No secrets required.*
+  *No secrets required.*
 
 - **mirror-orgs-full.yml**: Mirrors all repositories within an organization.
- *Requires `GITHUB_TOKEN`.*
+  *Requires `GITHUB_TOKEN`.*
 
 - **mirror-osp-to-gitlab.yml**: Mirrors open-source projects to GitLab.
- *Requires `GITLAB_TOKEN`.*
+  *Requires `GITLAB_TOKEN`.*
 
 - **neon-build-ci.yml**: Builds and tests the Neon project.
- *No secrets required.*
+  *No secrets required.*
 
 - **sync-forks.yml**: Synchronizes forks with their upstream repositories.
- *No secrets required.*
+  *No secrets required.*
 
 - **rotate-token.yml**: Rotates API tokens for security purposes.
- *Requires `API_TOKEN`.*
+  *Requires `API_TOKEN`.*
 
 - **trigger-artifact-mirror.yml**: Triggers artifact mirroring workflows.
- *No secrets required.*
+  *No secrets required.*
 
 Refer to individual workflow files in `.github/workflows/` for detailed configurations.
 <!-- AI:end:ci -->
@@ -93,7 +93,7 @@ Refer to individual workflow files in `.github/workflows/` for detailed configur
 This repo is maintained in [`Interested-Deving-1896/oa-tools`](https://github.com/Interested-Deving-1896/oa-tools) and mirrored through:
 
 ```
-Interested-Deving-1896/oa-tools ──► OpenOS-Project-OSP/oa-tools ──► OpenOS-Project-Ecosystem-OOC/oa-tools
+Interested-Deving-1896/oa-tools  ──►  OpenOS-Project-OSP/oa-tools  ──►  OpenOS-Project-Ecosystem-OOC/oa-tools
 ```
 
 Changes flow downstream automatically via the hourly mirror chain in
